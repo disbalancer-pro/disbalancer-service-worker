@@ -15,28 +15,42 @@ self.addEventListener('activate', function(event) {
 
 self.addEventListener('fetch', function(event) {
   console.log("requested resource: " + event.request.url)
+
+  // get the name of the resource
   var url = event.request.url
   var route = url.split("/")[3]
 
+  // make sure its not the index or a js file
   if (route != "" && !route.includes(".js")) {
-    console.log("route: " + route)
-    var init = {
-      method: 'GET',
-      mode: event.request.mode,
-      cache: 'default'
-    };
+    // make sure we have the route
+    if (checkHash(route, route)) {
+      console.log("route: " + route)
+      var init = {
+        method: 'GET',
+        mode: event.request.mode,
+        cache: 'default'
+      };
 
-    url = "http://localhost:5001/" + route
-    console.log("fetching: " + url)
-    event.respondWith(fetch(url, init).then(
-      function(res) {
-        console.log("RES: ", res);
-        return res
-      },
-      function(err) {
-        console.log("ERROR: ",err);
-        return err
-      })
-    )
-  }
+      // contruct a request for the edge node
+      url = "http://localhost:5001/" + route
+      console.log("fetching: " + url)
+
+      // make request
+      event.respondWith(fetch(url, init).then(
+        function(res) {
+          console.log("RES: ", res);
+          return res
+        },
+        function(err) {
+          console.log("ERROR: ",err);
+          return err
+        })
+      ) // respond with
+    } // check route
+  } // if !index and !js
 })
+
+function checkHash(hash1, hash2) {
+  return true
+}
+
