@@ -1,17 +1,9 @@
+var CACHE = 'gladius-cache'
+
 // install stage
 self.addEventListener('install', function(event) {
-  event.waitUntil(
-    caches.open('gladius').then(function(cache) {
-      return cache.addAll([
-        'dog.jpg',
-        'cat.jpg',
-        'bunny.jpg',
-        'fox.png'
-      ])
-    })
-  )
-  // we dont need to wait for other clients to close
   self.skipWaiting();
+  event.waitUntil(precache());
 });
 
 // active stage
@@ -27,75 +19,72 @@ self.addEventListener('fetch', function(event) {
   console.log("fetching: " + event.request.url);
   event.respondWith(
     // first find in local cache
-    caches.match(event.request).then(function(resp) {
+    caches.match(event.request).then(function(cachedContent) {
       // return from cache
-      if (resp) {
+      if (cachedContent) {
         console.log("serving " + event.request.url + " from cache");
-        return resp
-      } else {
-        // if not in cache then make a network request
-        fetch(event.request).then(function(response) {
-
-        // cache the new response for the future
-        let responseClone = response.clone();
-        caches.open('gladius').then(function(cache) {
-          cache.put(event.request, responseClone);
-        });
-
-        console.log("serving " + event.request.url + " from network");
-
-        console.log(response);
-        // return the content
-        return response;
-        });
       }
-    }).catch(function() {
-      console.log("Offline and not found! Here's something from the cache!");
-      // if we can't find it AND we are offline then default
+      return cachedContent || fetch(event.request).then(function(response) {
+        // return from the origin + add to cache
+        // cache the new response for the future
+        addToCache(event.request,response.clone())
+        // console.log(response);
+        console.log("serving " + event.request.url + " from network");
+        return response;
+      });
+    })
+    // if the cache doesnt have it AND we are offline
+    .catch(function() {
+      console.log("Offline and not found! Here's a default from the cache!");
       return caches.match('fox.png');
     })
   );
 });
 
-// // this will run on every fetch for a resource
-// self.addEventListener('fetch', function(event) {
-//   console.log("requested resource: " + event.request.url)
-//
-//   // get the name of the resource
-//   var url = event.request.url
-//   var route = url.split("/")[3]
-//
-//   // make sure its not the index or a js file
-//   if (route != "" && !route.includes(".js")) {
-//     // make sure we have the route
-//     if (checkHash(route, route)) {
-//       console.log("route: " + route)
-//       var init = {
-//         method: 'GET',
-//         mode: event.request.mode,
-//         cache: 'default'
-//       };
-//
-//       // contruct a request for the edge node
-//       url = "http://localhost:5001/" + route
-//       console.log("fetching: " + url)
-//
-//       // make request
-//       event.respondWith(fetch(url, init).then(
-//         function(res) {
-//           console.log("RES: ", res);
-//           return res
-//         },
-//         function(err) {
-//           console.log("ERROR: ",err);
-//           return err
-//         })
-//       ) // respond with
-//     } // check route
-//   } // if !index and !js
-// })
-
 function checkHash(hash1, hash2) {
-  return true
+  if (hash1 == hash2) {
+    return true
+  }
+  return false
 }
 
+// Open a cache and use `addAll()` with an array of assets to add all of them
+// to the cache. Return a promise resolving when all the assets are added.
+function precache() {
+  return caches.open(CACHE).then(function (cache) {
+    return cache.addAll([
+      'dog.jpg',
+      'cat.jpg',
+      'bunny.jpg',
+      'fox.png'
+    ]);
+  });
+}
+
+// Open the cache where the assets were stored and search for the requested
+// resource. Notice that in case of no matching, the promise still resolves
+// but it does with `undefined` as value.
+function fromCache(request) {
+  return caches.open(CACHE).then(function (cache) {
+    return cache.match(request).then(function (matching) {
+      return matching || Promise.reject('no-match');
+    });
+  });
+}
+
+// Update consists in opening the cache, performing a network request and
+// storing the new response data.
+function update(request) {
+  return caches.open(CACHE).then(function (cache) {
+    return fetch(request).then(function (response) {
+      return cache.put(request, response);
+    });
+  });
+}
+
+// Add a request/response pair to the cache
+function addToCache(request, response) {
+  caches.open(CACHE).then(function(cache) {
+    cache.put(request, response);
+  });
+}
