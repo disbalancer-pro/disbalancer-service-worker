@@ -41,6 +41,7 @@ self.addEventListener('fetch', function(event) {
   );
 });
 
+// compare hash of the files
 function checkHash(hash1, hash2) {
   if (hash1 == hash2) {
     return true
@@ -61,26 +62,6 @@ function precache() {
   });
 }
 
-// Open the cache where the assets were stored and search for the requested
-// resource. Notice that in case of no matching, the promise still resolves
-// but it does with `undefined` as value.
-function fromCache(request) {
-  return caches.open(CACHE).then(function (cache) {
-    return cache.match(request).then(function (matching) {
-      return matching || Promise.reject('no-match');
-    });
-  });
-}
-
-// Update consists in opening the cache, performing a network request and
-// storing the new response data.
-function update(request) {
-  return caches.open(CACHE).then(function (cache) {
-    return fetch(request).then(function (response) {
-      return cache.put(request, response);
-    });
-  });
-}
 
 // Add a request/response pair to the cache
 function addToCache(request, response) {
