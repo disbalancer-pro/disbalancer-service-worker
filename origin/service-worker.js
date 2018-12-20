@@ -21,19 +21,11 @@ self.addEventListener('activate', function(event) {
 self.addEventListener('fetch', function(event) {
   // console.log("FETCHING: " + event.request.url);
   // serve from cache then network
+  // let thing = fromCacheThenNetwork(event.request)
+  // console.log(thing);
   event.respondWith(fromCacheThenNetwork(event.request));
   // event.waitUntil(update(event.request));
 });
-
-// compare hash of the file to actual value
-function checkHash(expectedHash, contentString) {
-  console.log("GENERATED: " + sha256(contentString).toUpperCase());
-  console.log("EXPECTED: " + expectedHash.slice(0, -4).toUpperCase());
-  if (sha256(contentString).toUpperCase() === expectedHash.slice(0, -4).toUpperCase()) {
-    return true
-  }
-    return false
-}
 
 // Open a cache and use `addAll()` with an array of assets to add all of them
 // to the cache. Return a promise resolving when all the assets are added.
@@ -53,6 +45,22 @@ function addToCache(request, response) {
   caches.open(CACHE).then(function(cache) {
     cache.put(request, response);
   });
+}
+
+function checkHash(expectedHash, response) {
+  return new Promise(function(resolve, reject) {
+    let clone = response.clone()
+    return clone.text().then(function(contentString) {
+      console.log("CONTENT STRING: " + contentString);
+      console.log("CONTENT HASH: " + sha256(contentString));
+      console.log("GENERATED: " + sha256(contentString).toUpperCase());
+      console.log("EXPECTED: " + expectedHash.slice(0, -4).toUpperCase());
+      if (sha256(contentString).toUpperCase() === expectedHash.slice(0, -4).toUpperCase()) {
+        resolve(response)
+      }
+        reject(response)
+    })
+  })
 }
 
 let assets = {
@@ -86,6 +94,15 @@ function fromCacheThenNetwork(request) {
       edgeUrl = request.url
     }
     return cachedContent || fetch(edgeUrl).then(function(response) {
+      if (check) {
+        return checkHash(assetName,response.clone()).then(function(res) {
+          console.log("resolved");
+          return res.clone();
+        }).catch(function(res){
+          console.log("rejected");
+          return res.clone();
+        });
+      }
       // checkHash(assetName, contentString)
       // return from the origin + add to cache
       // cache the new response for the future
@@ -97,7 +114,8 @@ function fromCacheThenNetwork(request) {
     })
   })
   // if the cache doesnt have it AND we are offline
-  .catch(function() {
+  .catch(function(err) {
+    console.log(err);
     console.log("Offline and not found! Here's a default from the cache!");
     return caches.match('fox.png');
   })
