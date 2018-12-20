@@ -47,14 +47,11 @@ function addToCache(request, response) {
   });
 }
 
+// check the hash of the file against the expectedHash
 function checkHash(expectedHash, response) {
   return new Promise(function(resolve, reject) {
     let clone = response.clone()
-    return clone.text().then(function(contentString) {
-      console.log("CONTENT STRING: " + contentString);
-      console.log("CONTENT HASH: " + sha256(contentString));
-      console.log("GENERATED: " + sha256(contentString).toUpperCase());
-      console.log("EXPECTED: " + expectedHash.slice(0, -4).toUpperCase());
+    return clone.blob().then(function(contentString) {
       if (sha256(contentString).toUpperCase() === expectedHash.slice(0, -4).toUpperCase()) {
         resolve(response)
       }
@@ -83,16 +80,18 @@ function fromCacheThenNetwork(request) {
       console.log("serving " + assetName + " from cache");
     }
 
-    if (assetName.includes("cat") || assetName.includes("bunny") || assetName.includes("frog")) {
+    if (assetName.includes("dog") || assetName.includes("cat") || assetName.includes("bunny") || assetName.includes("frog")) {
       assetName = findAsset(assetName)
       console.log(asset_temp + ": " + assetName);
       check = true
+    } else {
+      if (assetName == "") {
+        assetName = findAsset(assetName)
+      }
     }
 
     let edgeUrl = EDGENODE + "/content?website=" + WEBSITE + "&asset=" + assetName
-    if (assetName == "") {
-      edgeUrl = request.url
-    }
+
     return cachedContent || fetch(edgeUrl).then(function(response) {
       if (check) {
         return checkHash(assetName,response.clone()).then(function(res) {
@@ -133,6 +132,9 @@ function update(request) {
 
 // convert the name to the hash
 function findAsset(assetName) {
+  if (assetName == "") {
+    return "index.html"
+  }
   return assets[assetName.split(".")[0]]
 }
 
