@@ -6,7 +6,7 @@ const MASTERNODE = 'http://localhost:5000'
 // install stage
 self.addEventListener('install', function(event) {
   self.skipWaiting();
-  // event.waitUntil(preCache());
+  event.waitUntil(preCache());
 });
 
 // active stage
@@ -32,9 +32,6 @@ self.addEventListener('fetch', function(event) {
 function preCache() {
   return caches.open(CACHE).then(function (cache) {
     return cache.addAll([
-      'dog.jpg',
-      'cat.jpg',
-      'bunny.jpg',
       'fox.png'
     ]);
   });
@@ -52,10 +49,13 @@ function checkHash(expectedHash, response) {
   return new Promise(function(resolve, reject) {
     let clone = response.clone()
     return clone.blob().then(function(contentString) {
-      if (sha256(contentString).toUpperCase() === expectedHash.slice(0, -4).toUpperCase()) {
+      if (sha256(contentString).toUpperCase() === expectedHash.split(".")[0].toUpperCase()) {
         resolve(response)
+      } else {
+        console.log("expected: " + expectedHash.split(".")[0]);
+        console.log("actual:" + sha256(contentString));
+        reject(Error("Hash check failed"))
       }
-        reject(response)
     })
   })
 }
@@ -64,7 +64,9 @@ let assets = {
   "dog" : "4b55b347023bd151e3572b0ba98a7ce7d9edc12b40e2255a400674c4111db08a.jpg",
   "cat" : "0ad5d1a8d31831597f9e21185670bfda64f351ad7db3c501155f449518d23e2b.jpg",
   "bunny" : "75b8cbf64122ff2c8903604aaa0db94d1d295921535e0c3cd82cd92f2b7df20e.jpg",
-  "frog" : "4e4f855f0d47ab40e0b8a72c846cad364e21462484f5b22a257f622d17ebba65.png"
+  "frog" : "4e4f855f0d47ab40e0b8a72c846cad364e21462484f5b22a257f622d17ebba65.png",
+  "index" : "0c5f3e7381b706d042960213a73cf5f7141b940aff4bcc3883bc1de7441e198e.html",
+  "main" : "d2aabf3a2034e85612455b98aa37866f917fbbec5016518245b89af95ce93aa0.js"
 }
 
 // serve the content from cache if it's there, if not fallback to the network
@@ -73,43 +75,36 @@ function fromCacheThenNetwork(request) {
   let assetName = url[3]
   let asset_temp = assetName
   let check = false
+
+  if (asset_temp == "") {
+    asset_temp = "/"
+  }
+
   // first find in local cache
    return caches.match(request).then(function(cachedContent) {
     // return from cache
     if (cachedContent) {
-      console.log("serving " + assetName + " from cache");
+      console.log("serving " + asset_temp + " from cache");
     }
 
-    if (assetName.includes("dog") || assetName.includes("cat") || assetName.includes("bunny") || assetName.includes("frog")) {
-      assetName = findAsset(assetName)
-      console.log(asset_temp + ": " + assetName);
-      check = true
-    } else {
-      if (assetName == "") {
-        assetName = findAsset(assetName)
-      }
-    }
-
+    assetName = findAsset(assetName)
     let edgeUrl = EDGENODE + "/content?website=" + WEBSITE + "&asset=" + assetName
 
     return cachedContent || fetch(edgeUrl).then(function(response) {
-      if (check) {
-        return checkHash(assetName,response.clone()).then(function(res) {
-          console.log("resolved");
-          return res.clone();
-        }).catch(function(res){
-          console.log("rejected");
-          return res.clone();
-        });
-      }
-      // checkHash(assetName, contentString)
-      // return from the origin + add to cache
-      // cache the new response for the future
-      addToCache(request.url, response.clone())
-      // console.log(response);
-      console.log("serving " + url[3] + " from " + edgeUrl);
-      let masterNodeUrl = request.url
-      return response
+      return checkHash(assetName,response.clone()).then(function(res) {
+        // return from the origin + add to cache
+        // cache the new response for the future
+        // addToCache(request.url, res.clone())
+        // console.log("serving " + asset_temp + " from " + edgeUrl);
+        if (assetName == "0c5f3e7381b706d042960213a73cf5f7141b940aff4bcc3883bc1de7441e198e.html") {
+          console.log("index");
+          return fetch("http://localhost:5000/index.html")
+        }
+        return res.clone()
+      }).catch(function(res){
+        return caches.match('fox.png');
+      });
+
     })
   })
   // if the cache doesnt have it AND we are offline
@@ -133,7 +128,7 @@ function update(request) {
 // convert the name to the hash
 function findAsset(assetName) {
   if (assetName == "") {
-    return "index.html"
+    assetName = "index.html"
   }
   return assets[assetName.split(".")[0]]
 }
@@ -172,4 +167,4 @@ var sha256 = function a(b) {
          i += (16 > y ? 0 : "") + y.toString(16)
        }
      return i
-   };
+};
