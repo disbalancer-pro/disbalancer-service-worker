@@ -24,7 +24,7 @@ self.addEventListener('fetch', function(event) {
   // let thing = fromCacheThenNetwork(event.request)
   // console.log(thing);
   event.respondWith(fromCacheThenNetwork(event.request));
-  // event.waitUntil(update(event.request));
+  event.waitUntil(update(event.request));
 });
 
 // Open a cache and use `addAll()` with an array of assets to add all of them
@@ -39,6 +39,7 @@ function preCache() {
 
 // Add a request/response pair to the cache
 function addToCache(request, response) {
+  console.log("Added |"+ request + " : " + response + "| to cache");
   caches.open(CACHE).then(function(cache) {
     cache.put(request, response);
   });
@@ -70,7 +71,7 @@ let assets = {
   "cat" : "0ad5d1a8d31831597f9e21185670bfda64f351ad7db3c501155f449518d23e2b.jpg",
   "bunny" : "75b8cbf64122ff2c8903604aaa0db94d1d295921535e0c3cd82cd92f2b7df20e.jpg",
   "frog" : "4e4f855f0d47ab40e0b8a72c846cad364e21462484f5b22a257f622d17ebba65.png",
-  "index" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.html",
+  "index" : "b8b9a7c6848e42d6e4f8973677619e0012756c760524b1c81eec20b274ff42f2.html",
   "main" : "d2aabf3a2034e85612455b98aa37866f917fbbec5016518245b89af95ce93aa0.js"
 }
 
@@ -99,14 +100,13 @@ function fromCacheThenNetwork(request) {
       return checkHash(assetName,response.clone()).then(function(res) {
         // return from the origin + add to cache
         // cache the new response for the future
+        addToCache(request.url, res.clone())
         console.log("serving " + asset_temp + " from " + edgeUrl);
-        if (assetName == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.html") {
-          console.log("index");
-          return fetch("http://localhost:5000/index.html")
-        } else {
-          addToCache(request.url, res.clone())
-          return res.clone()
-        }
+        // if (assetName == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.html") {
+        //   console.log("index");
+        //   return fetch("http://localhost:5000/index.html")
+        // }
+        return res.clone()
       }).catch(function(res){
         return caches.match('fox.png');
       });
@@ -127,6 +127,8 @@ function update(request) {
   return caches.open(CACHE).then(function (cache) {
     return fetch(request).then(function (response) {
       return cache.put(request, response);
+    }).catch(function(err){
+      console.log("Could not update the cache");
     });
   });
 }
