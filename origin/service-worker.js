@@ -45,16 +45,21 @@ function addToCache(request, response) {
 }
 
 // check the hash of the file against the expectedHash
+// it seems in Chrome 45 the limit is 261 MB
 function checkHash(expectedHash, response) {
   return new Promise(function(resolve, reject) {
     let clone = response.clone()
-    return clone.blob().then(function(contentString) {
-      if (sha256(contentString).toUpperCase() === expectedHash.split(".")[0].toUpperCase()) {
-        resolve(response)
-      } else {
-        console.log("expected: " + expectedHash.split(".")[0]);
-        console.log("actual:" + sha256(contentString));
-        reject(Error("Hash check failed"))
+    return clone.blob().then(function(content) {
+      let fr = new FileReader();
+      fr.readAsBinaryString(content)
+      fr.onloadend = function () {
+        if (sha256(fr.result).toUpperCase() === expectedHash.split(".")[0].toUpperCase()) {
+          resolve(response)
+        } else {
+          console.log("expected: " + expectedHash.split(".")[0]);
+          console.log("actual:   " + sha256(fr.result));
+          reject(Error("Hash check failed"))
+        }
       }
     })
   })
@@ -65,7 +70,7 @@ let assets = {
   "cat" : "0ad5d1a8d31831597f9e21185670bfda64f351ad7db3c501155f449518d23e2b.jpg",
   "bunny" : "75b8cbf64122ff2c8903604aaa0db94d1d295921535e0c3cd82cd92f2b7df20e.jpg",
   "frog" : "4e4f855f0d47ab40e0b8a72c846cad364e21462484f5b22a257f622d17ebba65.png",
-  "index" : "0c5f3e7381b706d042960213a73cf5f7141b940aff4bcc3883bc1de7441e198e.html",
+  "index" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.html",
   "main" : "d2aabf3a2034e85612455b98aa37866f917fbbec5016518245b89af95ce93aa0.js"
 }
 
@@ -94,13 +99,14 @@ function fromCacheThenNetwork(request) {
       return checkHash(assetName,response.clone()).then(function(res) {
         // return from the origin + add to cache
         // cache the new response for the future
-        // addToCache(request.url, res.clone())
-        // console.log("serving " + asset_temp + " from " + edgeUrl);
-        if (assetName == "0c5f3e7381b706d042960213a73cf5f7141b940aff4bcc3883bc1de7441e198e.html") {
+        console.log("serving " + asset_temp + " from " + edgeUrl);
+        if (assetName == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.html") {
           console.log("index");
           return fetch("http://localhost:5000/index.html")
+        } else {
+          addToCache(request.url, res.clone())
+          return res.clone()
         }
-        return res.clone()
       }).catch(function(res){
         return caches.match('fox.png');
       });
