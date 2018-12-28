@@ -19,15 +19,13 @@ self.addEventListener('activate', function(event) {
 
 // every time a resource is requested
 self.addEventListener('fetch', function(event) {
-  // console.log("FETCHING: " + event.request.url);
-  // serve from cache then network
-  // let thing = fromCacheThenNetwork(event.request)
-  // console.log(thing);
+  // serve from cache, fallback on network
   event.respondWith(fromCacheThenNetwork(event.request));
+  // fetch requests again in order to update the cache
   event.waitUntil(update(event.request));
 });
 
-// Open a cache and use `addAll()` with an array of assets to add all of them
+// open a cache and use `addAll()` with an array of assets to add all of them
 // to the cache. Return a promise resolving when all the assets are added.
 function preCache() {
   return caches.open(CACHE).then(function (cache) {
@@ -37,7 +35,7 @@ function preCache() {
   });
 }
 
-// Add a request/response pair to the cache
+// add a request/response pair to the cache
 function addToCache(request, response) {
   console.log("Added "+ request + " to cache");
   caches.open(CACHE).then(function(cache) {
@@ -45,22 +43,24 @@ function addToCache(request, response) {
   });
 }
 
-// check the hash of the file against the expectedHash
-// it seems in Chrome 45 the limit is 261 MB
+// check the hash of the file against the expected hash
 function checkHash(expectedHash, response) {
   return new Promise(function(resolve, reject) {
     let clone = response.clone()
     return clone.blob().then(function(content) {
       let fr = new FileReader();
-      fr.readAsBinaryString(content)
+      fr.readAsArrayBuffer(content)
       fr.onloadend = function () {
-        if (sha256(fr.result).toUpperCase() === expectedHash.split(".")[0].toUpperCase()) {
-          resolve(response)
-        } else {
-          console.log("expected: " + expectedHash.split(".")[0]);
-          console.log("actual:   " + sha256(fr.result));
-          reject(Error("Hash check failed"))
-        }
+        crypto.subtle.digest('SHA-256', fr.result).then(function(res){
+          let hash = bufferToHex1(res)
+          if (hash.toUpperCase() === expectedHash.split(".")[0].toUpperCase()){
+            resolve(response)
+          } else {
+            console.log("expected: " + expectedHash.split(".")[0]);
+            console.log("actual:   " + sha256(fr.result));
+            reject(Error("Hash check failed"))
+          }
+        })
       }
     })
   })
@@ -123,7 +123,7 @@ function fromCacheThenNetwork(request) {
   })
 }
 
-// Update consists in opening the cache, performing a network request and
+// update consists in opening the cache, performing a network request and
 // storing the new response data.
 function update(request) {
   return caches.open(CACHE).then(function (cache) {
@@ -135,6 +135,7 @@ function update(request) {
   });
 }
 
+// takes a blob and adds the appropriate headers, this is temporary
 function rebuildResponse(response, assetName) {
   return new Promise(function(resolve, reject) {
     let res = response.clone()
@@ -169,7 +170,7 @@ function rebuildResponse(response, assetName) {
   })
 }
 
-// convert the name to the hash
+// match the name to the hash
 function findAsset(assetName) {
   if (assetName == "") {
     assetName = "index.html"
@@ -177,38 +178,9 @@ function findAsset(assetName) {
   return assets[assetName.split(".")[0]]
 }
 
-var sha256 = function a(b) {
-     function c(a, b) {
-       return a >>> b | a << 32 - b
-     }
-     for (var d, e, f = Math.pow, g = f(2, 32), h = "length", i = "", j = [], k = 8 * b[h], l = a.h = a.h || [], m = a.k = a.k || [], n = m[h], o = {}, p = 2; 64 > n; p++)
-       if (!o[p]) {
-         for (d = 0; 313 > d; d += p) o[d] = p;
-         l[n] = f(p, .5) * g | 0, m[n++] = f(p, 1 / 3) * g | 0
-       }
-     for (b += "\x80"; b[h] % 64 - 56;) b += "\x00";
-     for (d = 0; d < b[h]; d++) {
-       if (e = b.charCodeAt(d), e >> 8) return;
-       j[d >> 2] |= e << (3 - d) % 4 * 8
-     }
-     for (j[j[h]] = k / g | 0, j[j[h]] = k, e = 0; e < j[h];) {
-       var q = j.slice(e, e += 16),
-         r = l;
-       for (l = l.slice(0, 8), d = 0; 64 > d; d++) {
-         var s = q[d - 15],
-           t = q[d - 2],
-           u = l[0],
-           v = l[4],
-           w = l[7] + (c(v, 6) ^ c(v, 11) ^ c(v, 25)) + (v & l[5] ^ ~v & l[6]) + m[d] + (q[d] = 16 > d ? q[d] : q[d - 16] + (c(s, 7) ^ c(s, 18) ^ s >>> 3) + q[d - 7] + (c(t, 17) ^ c(t, 19) ^ t >>> 10) | 0),
-           x = (c(u, 2) ^ c(u, 13) ^ c(u, 22)) + (u & l[1] ^ u & l[2] ^ l[1] & l[2]);
-         l = [w + x | 0].concat(l), l[4] = l[4] + w | 0
-       }
-       for (d = 0; 8 > d; d++) l[d] = l[d] + r[d] | 0
-     }
-     for (d = 0; 8 > d; d++)
-       for (e = 3; e + 1; e--) {
-         var y = l[d] >> 8 * e & 255;
-         i += (16 > y ? 0 : "") + y.toString(16)
-       }
-     return i
-};
+// array buffer to hex
+function bufferToHex1(buffer) {
+    var s = '', h = '0123456789ABCDEF';
+    (new Uint8Array(buffer)).forEach((v) => { s += h[v >> 4] + h[v & 15]; });
+    return s;
+}
