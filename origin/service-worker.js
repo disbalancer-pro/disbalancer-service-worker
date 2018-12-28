@@ -39,7 +39,7 @@ function preCache() {
 
 // Add a request/response pair to the cache
 function addToCache(request, response) {
-  console.log("Added |"+ request + " : " + response + "| to cache");
+  console.log("Added "+ request + " to cache");
   caches.open(CACHE).then(function(cache) {
     cache.put(request, response);
   });
@@ -90,7 +90,7 @@ function fromCacheThenNetwork(request) {
    return caches.match(request).then(function(cachedContent) {
     // return from cache
     if (cachedContent) {
-      console.log("serving " + asset_temp + " from cache");
+      console.log("Serving " + asset_temp + " from cache");
     }
 
     assetName = findAsset(assetName)
@@ -100,14 +100,19 @@ function fromCacheThenNetwork(request) {
       return checkHash(assetName,response.clone()).then(function(res) {
         // return from the origin + add to cache
         // cache the new response for the future
-        addToCache(request.url, res.clone())
+        // addToCache(request.url, res.clone())
         console.log("serving " + asset_temp + " from " + edgeUrl);
-        // if (assetName == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.html") {
+        // if (assetName == "b8b9a7c6848e42d6e4f8973677619e0012756c760524b1c81eec20b274ff42f2.html") {
         //   console.log("index");
-        //   return fetch("http://localhost:5000/index.html")
+        //   return rebuildResponse(res.clone(),assetName)
+        //   // return fetch("http://localhost:5000/index.html")
         // }
-        return res.clone()
+        return rebuildResponse(res.clone(), assetName).then(function(response) {
+          addToCache(request.url, response.clone())
+          return response
+        })
       }).catch(function(res){
+        console.log(res);
         return caches.match('fox.png');
       });
 
@@ -131,6 +136,40 @@ function update(request) {
       console.log("Could not update the cache");
     });
   });
+}
+
+function rebuildResponse(response, assetName) {
+  return new Promise(function(resolve, reject) {
+    let res = response.clone()
+    let fileType = assetName.split(".")[1]
+    let contentType = ""
+
+    switch(fileType) {
+      case "html":
+        contentType = "text/html"
+        break;
+      case "js":
+        contentType = "text/javascript"
+        break;
+      case "png":
+        contentType = "image/png"
+        break;
+      case "jpg":
+        contentType = "image/jpeg"
+        break;
+      }
+    return res.blob().then(function(blob) {
+      if(contentType == "") {
+        let response = new Response(blob)
+        resolve(response)
+      }
+      let init = { "status" : res.status , headers: {"Content-Type": contentType}};
+      let myResponse =  new Response(blob, init)
+      resolve(myResponse)
+    }).catch(function(err) {
+      reject(err)
+    })
+  })
 }
 
 // convert the name to the hash
