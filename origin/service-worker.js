@@ -88,31 +88,28 @@ function fromCacheThenNetwork(request) {
 
   // first find in local cache
    return caches.match(request).then(function(cachedContent) {
-    // return from cache
     if (cachedContent) {
       console.log("Serving " + asset_temp + " from cache");
     }
-
+    // rename the asset to its hash
     assetName = findAsset(assetName)
+    // build the url
     let edgeUrl = EDGENODE + "/content?website=" + WEBSITE + "&asset=" + assetName
 
+    // return from cache or fetch from network (edge node)
     return cachedContent || fetch(edgeUrl).then(function(response) {
+      // check the hash first to make sure its the same file
       return checkHash(assetName,response.clone()).then(function(res) {
-        // return from the origin + add to cache
-        // cache the new response for the future
-        // addToCache(request.url, res.clone())
+        // rebuild the response in order to set the correct headers
         console.log("serving " + asset_temp + " from " + edgeUrl);
-        // if (assetName == "b8b9a7c6848e42d6e4f8973677619e0012756c760524b1c81eec20b274ff42f2.html") {
-        //   console.log("index");
-        //   return rebuildResponse(res.clone(),assetName)
-        //   // return fetch("http://localhost:5000/index.html")
-        // }
         return rebuildResponse(res.clone(), assetName).then(function(response) {
+          // add it to the cache for future use
           addToCache(request.url, response.clone())
           return response
         })
-      }).catch(function(res){
-        console.log(res);
+      }).catch(function(err){
+        console.log(err);
+        // replace with a default picture from cache
         return caches.match('fox.png');
       });
 
