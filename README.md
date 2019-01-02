@@ -26,7 +26,7 @@ server {
 Use the browser to access `localhost:XXXX`
 
 ## Tips
-**Helpful Developer Tool Options **
+**Helpful Developer Tool Options**
 - Chrome Dev Tools > Application:
   - Service Workers (left menu) > Update on Reload (Update SW on every page reload)
   - Clear storage (left menu):
@@ -35,5 +35,5 @@ Use the browser to access `localhost:XXXX`
     - Cache storage
     - Application cache
 
-** Don't want to deal with CORS?**
+**Don't want to deal with CORS?**
 - https://chrome.google.com/webstore/detail/allow-control-allow-origi/nlfbmbojpeacfghkpbjhddihlkkiljbi
