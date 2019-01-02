@@ -19,7 +19,8 @@ server {
 
     location / {
         try_files $uri $uri/ $uri/index.html =404;
-    }```
+    }
+```
 
 ## How To Use
 Use the browser to access `localhost:XXXX`
