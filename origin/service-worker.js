@@ -106,36 +106,32 @@ let assets = {
 
 // serve the content from cache if it's there, if not fallback to the network
 function fromCacheThenNetwork(request) {
-  let url = request.url.split("/")
-  let assetName = url[3]
-  let asset_temp = assetName
+  let url = new URL(request.url);
 
-  if (asset_temp == "") {
-    asset_temp = "/"
-  }
-
-  if (!url.includes("localhost:8001")) {
-    return fetch(request.url)
+  // rename the asset to its hash
+  let asset = {
+    "name" : url.pathname,
+    "hash" : findHash(url.pathname)
   }
 
   // first find in local cache
    return caches.match(request).then(function(cachedContent) {
     if (cachedContent) {
-      console.log("Serving " + asset_temp + " from cache");
-    }
-    // rename the asset to its hash
-    asset = {
-      "name" : assetName,
-      "hash" : findAsset(assetName)
+      console.log("Serving " + asset.name + " from cache");
+    } else {
+      // if its not for our site or edgenode doesnt have it, proxy it to the masternode
+      if (!url.hostname.includes("localhost") || !asset.hash) {
+        console.log("Proxied " + url.pathname);
+        return fetch(request.url).then(function(response) {
+          addToCache(request.url, response.clone())
+          return response
+        })
+      }
     }
 
-    if (!asset.hash) {
-      console.log("serving " + asset.name + " from masternode");
-      return fetch(request.url)
-    }
-
-    if (asset.name == "") {
-      asset.name = "index.html"
+    // figure out something for this, assume (/ = index.html) for now
+    if (asset.name == "/") {
+      asset.name = "/index.html"
     }
 
     // build the url
@@ -153,17 +149,18 @@ function fromCacheThenNetwork(request) {
           return response
         })
       }).catch(function(err){
+        // if the asset fails the hash check
         console.log(err);
         // replace with a default picture from cache
         return caches.match('mstile-150x150.png');
       });
     }).catch(function(err){
+      // if the fetch to the edgenode was unsuccessful (return from masternode)
       console.log(err);
       return fetch(request.url)
     })
-  })
-  // if the cache doesnt have it AND we are offline
-  .catch(function(err) {
+  }).catch(function(err) {
+    // if the cache doesnt have it and we cant get from network (doesnt have or offline)
     console.log(err);
     console.log("Offline and not found! Here's a default from the cache!");
     return caches.match('mstile-150x150.png');
@@ -188,6 +185,7 @@ function rebuildResponse(response, assetName) {
     let res = response.clone()
     let file = assetName.split(".")
     let fileType = file[file.length - 1]
+    console.log("REBUILDNG: " + file + " TYPE: " + fileType );
     let contentType = ""
 
     switch(fileType) {
@@ -221,14 +219,14 @@ function rebuildResponse(response, assetName) {
 }
 
 // match the name to the hash
-function findAsset(assetName) {
-  if (assetName == "") {
-    assetName = "index.html"
+function findHash(assetName) {
+  if (assetName == "/") {
+    assetName = "/index.html"
   }
 
   // console.log("FINDER: " + assetName + " : " + assets.assetHashes["/" + assetName]);
 
-  return assets.assetHashes["/" + assetName]
+  return assets.assetHashes[assetName]
 }
 
 // array buffer to hex
