@@ -163,7 +163,6 @@ function rebuildResponse(response, assetName) {
 
     let file = assetName.split(".")
     let fileType = file[file.length - 1]
-    console.log("REBUILDNG: " + file + " TYPE: " + fileType );
     let contentType = ""
 
     switch(fileType) {

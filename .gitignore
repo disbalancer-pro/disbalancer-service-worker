@@ -1,2 +1,6 @@
 node_modules/
 .DS_Store
+public/*
+!public/service-worker.js
+!public/main.js
+!public/index.html
