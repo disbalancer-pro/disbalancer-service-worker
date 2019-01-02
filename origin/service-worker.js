@@ -86,9 +86,6 @@ function fromCacheThenNetwork(request) {
       } else {
         // if its not for our site or edgenode doesnt have it, proxy it to the masternode
         if (!url.hostname.includes("localhost") || !asset.hash) {
-          if (url.pathname == "/") {
-            console.log(asset.hash);
-          }
           console.log("Proxied " + url.pathname);
           return fetch(request.url).then(function(response) {
             addToCache(request.url, response.clone())
@@ -129,8 +126,8 @@ function fromCacheThenNetwork(request) {
       })
     }).catch(function(err) {
       // if the cache doesnt have it and we cant get from network (doesnt have or offline)
-      console.log(err);
-      console.log("Asset not found in cache or on network! Using default fallback.");
+      Error(err);
+      console.log(asset.name + " not found in cache or on network! Using default fallback.");
       return useFallback()
     })
   })
