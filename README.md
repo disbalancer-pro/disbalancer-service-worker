@@ -1,4 +1,4 @@
-# Gladius Service Manager
+# Gladius Service Worker
 
 ## How To Run
 1. Build the Gladius Blog

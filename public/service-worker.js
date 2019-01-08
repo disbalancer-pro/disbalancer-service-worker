@@ -1,11 +1,12 @@
-const CACHE = 'gladius-cache'
+const CACHE = 'gladius-cache-v1'
 const WEBSITE = 'blog.gladius.io'
-const EDGENODE = 'http://localhost:8080'
-const MASTERNODE = 'http://blog.gladius.io'
+const SEEDNODE = 'http://blog.gladius.io:8080'
+const MASTERNODE = 'https://blog.gladius.io'
+const MNLIST = 'https://blog.gladius.io/docile-stu'
 
 // install stage
 self.addEventListener('install', function(event) {
-  event.waitUntil(retrieveList(MASTERNODE));
+  event.waitUntil(retrieveList(MNLIST));
   self.skipWaiting();
 });
 
@@ -22,7 +23,9 @@ self.addEventListener('fetch', function(event) {
   // serve from cache, fallback on network
   event.respondWith(fromCacheThenNetwork(event.request));
   // // fetch requests again in order to update the cache
-  // event.waitUntil(update(event.request));
+  event.waitUntil(update(event.request));
+  event.waitUntil(retrieveList(MNLIST));
+
   // event.respondWith(fetch(event.request.url))
 });
 
@@ -74,19 +77,14 @@ function fromCacheThenNetwork(request) {
       "hash" : hash
     }
 
-    // replace this for MN
-    if(asset.hash == "cd758e961199370a6f4057f5d302e11d9bbc48c86597b2d9da36eebbd3aea5fe") {
-      asset.hash = "b9af6a1c6fd06fa542ebd3f67d1da5c9f654ef082301492889aeedfbd7c613cd"
-    }
-
     // first find in local cache then try the edge nodes then the masternode
     return caches.match(request).then(function(cachedContent) {
       if (cachedContent) {
         console.log("Serving " + asset.name + " from cache");
       } else {
         // if its not for our site or edgenode doesnt have it, proxy it to the masternode
-        if (!url.hostname.includes("localhost") || !asset.hash) {
-          console.log("Proxied " + url.pathname);
+        if (!url.hostname.includes(WEBSITE) || !asset.hash) {
+          console.log("serving " + url.pathname + " from " + url.origin);
           return fetch(request.url).then(function(response) {
             addToCache(request.url, response.clone())
             return response
@@ -96,17 +94,15 @@ function fromCacheThenNetwork(request) {
 
       // if we get here, we assume the content is either cached or on an edgenode
       // build the url
-      let edgeUrl = EDGENODE + "/content?website=" + WEBSITE + "&asset=" + asset.hash
+      let edgeUrl = SEEDNODE + "/content?website=" + WEBSITE + "&asset=" + asset.hash
+      let eurl = new URL(edgeUrl)
 
       // return from cache or fetch from network (edge node)
       return cachedContent || fetch(edgeUrl).then(function(response) {
         // check the hash first to make sure its the same file
-        if (url.pathname == "/") {
-          console.log(asset.hash);
-        }
         return checkHash(asset.hash,response.clone()).then(function(res) {
           // rebuild the response in order to set the correct headers
-          console.log("serving " + asset.name + " from edgenode");
+          console.log("serving " + asset.name + " from " + eurl.origin);
           console.log(response);
           return rebuildResponse(res.clone(), asset.name).then(function(response) {
             // add it to the cache for future use
@@ -198,7 +194,7 @@ function rebuildResponse(response, assetName) {
 // match the name to the hash
 function findHash(assetName) {
   // we SHOULD have the cached asset list, if we do, use it
-  return caches.match(MASTERNODE).then(function(cachedAssets) {
+  return caches.match(MNLIST).then(function(cachedAssets) {
     return cachedAssets.json().then(function(hashList) {
       return hashList.assetHashes[assetName]
     })
@@ -206,7 +202,7 @@ function findHash(assetName) {
   .catch(function(err) {
     // if for some reason the list isnt in the cache, add it to the cached, and use it
     console.log(err);
-    return retrieveList(MASTERNODE).then(function(res){
+    return retrieveList(MNLIST).then(function(res){
       return res.json().then(function(hashList) {
         return hashList.assetHashes[assetName]
       })
