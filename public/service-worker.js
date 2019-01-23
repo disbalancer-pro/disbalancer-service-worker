@@ -143,7 +143,11 @@ function update(request) {
     return fetch(request).then(function (response) {
       return cache.put(request, response);
     }).catch(function(err){
-      console.log("Could not update the cache");
+      return fetch(event.request).then(function(response) {
+        return cache.put(event.request, response);
+      }).catch(function(err){
+        Error("Could not update the cache");
+      })
     });
   });
 }
