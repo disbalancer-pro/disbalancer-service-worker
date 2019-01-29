@@ -4,3 +4,4 @@ public/*
 !public/service-worker.js
 !public/main.js
 !public/index.html
+!public/serviceworker-cache-polyfill.js

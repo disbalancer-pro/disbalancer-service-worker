@@ -1,10 +1,13 @@
+// service worker cache polyfill
+// importScripts('serviceworker-cache-polyfill.js')
+
 const CACHE = 'gladius-cache-v1'
 const WEBSITE = 'blog.gladius.io'
 const HOST = 'localhost'
 const SEEDNODE = 'http://blog.gladius.io:8080'
 const MASTERNODE = 'https://blog.gladius.io'
 const MNLIST = 'https://blog.gladius.io/docile-stu'
-const EDGENODE = 'http://XXXXXXXX:8080'
+const EDGENODE = 'http://X.X.X.X:8080'
 const MNONLINE = false
 
 let mnResponse = {
@@ -136,7 +139,7 @@ function fromCacheThenNetwork(request) {
       let eurl = new URL(edgeUrl)
 
       // return from cache or fetch from network (edge node)
-      return cachedContent || fetch(edgeUrl).then(function(response) {
+      return cachedContent || fetch(edgeUrl,{method:"GET",headers:{"Accept-Encoding": "gzip, deflate"}}).then(function(response) {
         // check the hash first to make sure its the same file
         return checkHash(asset.hash,response.clone()).then(function(res) {
           // rebuild the response in order to set the correct headers
@@ -224,7 +227,7 @@ function rebuildResponse(response, assetName) {
         let response = new Response(blob)
         resolve(response)
       }
-      let init = { "status" : res.status , headers: {"Content-Type": contentType}};
+      let init = { "status" : res.status , headers: { "Content-Encoding": "gzip","Content-Type": contentType}};
       let myResponse =  new Response(blob, init)
       resolve(myResponse)
     }).catch(function(err) {
