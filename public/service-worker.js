@@ -86,8 +86,10 @@ function checkHash(expectedHash, response) {
           let hash = bufferToHex1(res)
           if (hash.toUpperCase() === expectedHash.toUpperCase()){
             resolve(response)
+            return
           } else {
             reject(Error("Hash check failed.\nexpected hash: " + expectedHash + "\nactual hash: " + hash))
+            return
           }
         })
       }
@@ -119,7 +121,7 @@ async function fromCacheThenNetwork(request) {
     // if there's a problem getting the hash just proxy it
     // also cache for next time
     console.log("findHash: " + err);
-    const res = await proxyToMasterNode
+    const res = await proxyToMasterNode(request)
     addToCache(request.url, res.clone())
     return res
   }
@@ -136,9 +138,13 @@ async function fromCacheThenNetwork(request) {
   } catch(err) {
     // if it's not on an edgenode proxy to masternode then cache for next time
     console.log("pickEdgeNode: " + err)
-    const res = await proxyToMasterNode
+    const res = await proxyToMasterNode(request)
     addToCache(request.url, res.clone())
     return res
+  }
+
+  if(typeof asset.hash == 'undefined'){
+    console.log("UNDEFINED:",asset.name);
   }
 
   // build the url
@@ -236,12 +242,15 @@ function rebuildResponse(response, assetName) {
       if(contentType == "") {
         let response = new Response(blob)
         resolve(response)
+        return
       }
       let init = { "status" : res.status , headers: { "Content-Encoding": "gzip","Content-Type": contentType}};
       let myResponse =  new Response(blob, init)
       resolve(myResponse)
+      return
     }).catch(function(err) {
       reject(err)
+      return
     })
   })
 }
@@ -252,8 +261,13 @@ function findHash(assetName) {
   if (!MNONLINE) {
     return new Promise(function(resolve,reject){
       let asset = mnResponse.assetHashes[assetName]
-      console.log(asset,"asset found in the fake api");
+      if (asset === undefined) {
+        reject(Error(assetName,"asset NOT found in the fake api"))
+        return
+      }
+      console.log(assetName,"asset found in the fake api");
       resolve(asset)
+      return
     })
   }
 
@@ -282,6 +296,7 @@ function pickEdgeNode(mnList) {
       let edgenode = mnList.edgeNodes[0]
       console.log(edgenode,"edgenode found in fake api");
       resolve(edgenode)
+      return
     })
   }
   // the list should be in the cache but if it's not, go get it and cache it
