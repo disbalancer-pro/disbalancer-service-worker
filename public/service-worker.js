@@ -143,14 +143,11 @@ async function fromCacheThenNetwork(request) {
     return res
   }
 
-  if(typeof asset.hash == 'undefined'){
-    console.log("UNDEFINED:",asset.name);
-  }
-
   // build the url
   const edgeUrl = edgenode + "/content?website=" + WEBSITE + "&asset=" + asset.hash
   const eurl = new URL(edgeUrl)
 
+  // 4. Try and get the content from the edgenode
   let edgeResponse
   try {
     // return from edgenode or fallback to masternode
@@ -160,6 +157,7 @@ async function fromCacheThenNetwork(request) {
     return proxyToMasterNode(request)
   }
 
+  // 5. Check the hash
   let checkedResponse
   try {
     // check the hash first to make sure its the same file
@@ -170,6 +168,7 @@ async function fromCacheThenNetwork(request) {
     return useFallback()
   }
 
+  // 6. Rebuild the response with the correct headers
   let rebuiltResponse
   try {
     // rebuilding the response to have the right headers
@@ -179,7 +178,7 @@ async function fromCacheThenNetwork(request) {
     return proxyToMasterNode()
   }
 
-  // return and add it to the cache for future use
+  // 7. Finally return and add it to the cache for future use
   addToCache(request.url, rebuiltResponse.clone())
   console.log("serving " + asset.name + " from " + eurl.origin);
   return rebuiltResponse
