@@ -53,7 +53,7 @@ self.addEventListener('fetch', function(event) {
   // serve from cache, fallback on network
   event.respondWith(fromCacheThenNetwork(event.request));
   // fetch requests again in order to update the cache
-  // event.waitUntil(update("https://0xe8ebd13306f6f27562cf471ddde325985a1f76fe.cdn.beta.gladiuspool.com:8080", event.request));
+  // event.waitUntil(updateCache(event.request));
 });
 
 // open a cache and use `addAll()` with an array of assets to add all of them
@@ -101,6 +101,11 @@ function checkHash(expectedHash, response) {
 async function fromCacheThenNetwork(request) {
   const url = new URL(request.url);
 
+  // if it's from a different host then proxy it
+  if (!url.hostname.includes(HOST)) {
+    return proxyToMasterNode(request)
+  }
+
   // 1. See if we have the request in the cache
   const cachedContent = await caches.match(request)
   // if it is then we just serve from cache
@@ -120,15 +125,10 @@ async function fromCacheThenNetwork(request) {
   } catch(err) {
     // if there's a problem getting the hash just proxy it
     // also cache for next time
-    console.log("findHash: " + err);
+    console.error("findHash: " + err);
     const res = await proxyToMasterNode(request)
     addToCache(request.url, res.clone())
     return res
-  }
-
-  // if it's from a different host then proxy it
-  if (!url.hostname.includes(HOST)) {
-    return proxyToMasterNode(request)
   }
 
   // 3. If it is on an edgenode, pick one to serve it from
@@ -137,7 +137,7 @@ async function fromCacheThenNetwork(request) {
     edgenode = await pickEdgeNode(mnResponse)
   } catch(err) {
     // if it's not on an edgenode proxy to masternode then cache for next time
-    console.log("pickEdgeNode: " + err)
+    console.error("pickEdgeNode: " + err)
     const res = await proxyToMasterNode(request)
     addToCache(request.url, res.clone())
     return res
@@ -153,7 +153,7 @@ async function fromCacheThenNetwork(request) {
     // return from edgenode or fallback to masternode
     edgeResponse = await fetch(edgeUrl)
   } catch(err) {
-    console.log("edgenode fetch: " + err)
+    console.error("edgenode fetch: " + err)
     return proxyToMasterNode(request)
   }
 
@@ -164,7 +164,7 @@ async function fromCacheThenNetwork(request) {
     // if the hash check fails then serve the fallback warning image
     checkedResponse = await checkHash(asset.hash,edgeResponse.clone())
   } catch(err) {
-    console.log("checkHash: " + err)
+    console.error("checkHash: " + err)
     return useFallback()
   }
 
@@ -174,7 +174,7 @@ async function fromCacheThenNetwork(request) {
     // rebuilding the response to have the right headers
     rebuiltResponse = await rebuildResponse(checkedResponse.clone(), asset.name)
   } catch(err) {
-    console.log("rebuildResponse: " + err)
+    console.error("rebuildResponse: " + err)
     return proxyToMasterNode()
   }
 
@@ -193,20 +193,88 @@ function useFallback() {
 
 // update consists in opening the cache, performing a network request and
 // storing the new response data.
-function update(request, requestMasterNode) {
-  return caches.open(CACHE).then(function (cache) {
-    // update from edgenode
-    return fetch(request).then(function (response) {
-      return cache.put(request, response);
-    }).catch(function(err){
-      // update from masternode
-      return fetch(requestMasterNode).then(function(response) {
-        return cache.put(requestMasterNode, response);
-      }).catch(function(err){
-        Error("Could not update the cache");
-      })
-    });
-  });
+async function updateCache(request) {
+  const url = new URL(request.url)
+  const cache = await caches.open(CACHE)
+
+  // if it's from a different host then don't even try
+  if (!url.hostname.includes(HOST)) {
+    return
+  }
+
+  // 2. See if it's on an edgenode (check the masternode list)
+  let hash, asset
+  try {
+    hash = await findHash(url.pathname)
+    asset = {
+      "name" : url.pathname,
+      "hash" : hash
+    }
+  } catch(err) {
+    // if there's a problem getting the hash just update from network
+    console.error("findHash: " + err);
+    const res = await proxyToMasterNode(request)
+    console.log("updateCache: cache updated from", WEBSITE);
+    return cache.put(request, res.clone())
+  }
+
+  // 3. If it is on an edgenode, pick one to serve it from
+  let edgenode
+  try {
+    edgenode = await pickEdgeNode(mnResponse)
+  } catch(err) {
+    // if there's a problem getting the hash just update from network
+    console.error("pickEdgeNode: " + err);
+    const res = await proxyToMasterNode(request)
+    console.log("updateCache: cache updated from", WEBSITE);
+    return cache.put(request, res.clone())
+  }
+
+  // build the url
+  const edgeUrl = edgenode + "/content?website=" + WEBSITE + "&asset=" + asset.hash
+  const eurl = new URL(edgeUrl)
+
+  // 4. Try and get the content from the edgenode
+  let edgeResponse
+  try {
+    // return from edgenode or fallback to masternode
+    edgeResponse = await fetch(edgeUrl)
+  } catch(err) {
+    // if there's a problem getting the hash just update from network
+    console.error("fetchEdgeNode: " + err);
+    const res = await proxyToMasterNode(request)
+    console.log("updateCache: cache updated from", WEBSITE);
+    return cache.put(request, res.clone())
+  }
+
+  // 5. Check the hash
+  let checkedResponse
+  try {
+    // check the hash first to make sure its the same file
+    // if the hash check fails then serve the fallback warning image
+    checkedResponse = await checkHash(asset.hash,edgeResponse.clone())
+  } catch(err) {
+    console.error("checkHash: " + err)
+    console.error("Hash check failed! Could not update cache!");
+    return
+  }
+
+  // 6. Rebuild the response with the correct headers
+  let rebuiltResponse
+  try {
+    // rebuilding the response to have the right headers
+    rebuiltResponse = await rebuildResponse(checkedResponse.clone(), asset.name)
+  } catch(err) {
+    // if there's a problem getting the hash just update from network
+    error.log("rebuildResponse: " + err);
+    const res = await proxyToMasterNode(request)
+    console.log("updateCache: cache updated from", WEBSITE);
+    return cache.put(request, res.clone())
+  }
+
+  // if it passes all the checks then update the cache
+  console.log("updateCache: cache updated from", edgenode);
+  return cache.put(request, rebuiltResponse)
 }
 
 // takes a blob and adds the appropriate headers, this is temporary
@@ -342,7 +410,7 @@ function retrieveList(url) {
 
 async function proxyToMasterNode(request) {
   const url = new URL(request.url);
-  console.log("proxied " + url.pathname + "to masternode");
+  console.log("proxied " + url.pathname + " to masternode");
   const res = await fetch(request.url)
   return res
 }
