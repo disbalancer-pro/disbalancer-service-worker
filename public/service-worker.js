@@ -68,7 +68,7 @@ function preCache() {
 
 // add a request/response pair to the cache
 function addToCache(request, response) {
-  console.log("Added "+ request + " to cache");
+  console.log("added "+ request + " to cache");
   caches.open(CACHE).then(function(cache) {
     cache.put(request, response);
   });
@@ -88,7 +88,7 @@ function checkHash(expectedHash, response) {
             resolve(response)
             return
           } else {
-            reject(Error("Hash check failed.\nexpected hash: " + expectedHash + "\nactual hash: " + hash))
+            reject(Error("hash check failed.\nexpected hash: " + expectedHash + "\nactual hash: " + hash))
             return
           }
         })
@@ -103,6 +103,7 @@ async function fromCacheThenNetwork(request) {
 
   // if it's from a different host then proxy it
   if (!url.hostname.includes(HOST)) {
+    console.warn(url.pathname,"not from host");
     return proxyToMasterNode(request)
   }
 
@@ -125,7 +126,7 @@ async function fromCacheThenNetwork(request) {
   } catch(err) {
     // if there's a problem getting the hash just proxy it
     // also cache for next time
-    console.error("findHash: " + err);
+    console.warn("findHash: " + err);
     const res = await proxyToMasterNode(request)
     addToCache(request.url, res.clone())
     return res
@@ -137,7 +138,7 @@ async function fromCacheThenNetwork(request) {
     edgenode = await pickEdgeNode(mnResponse)
   } catch(err) {
     // if it's not on an edgenode proxy to masternode then cache for next time
-    console.error("pickEdgeNode: " + err)
+    console.warn("pickEdgeNode: " + err)
     const res = await proxyToMasterNode(request)
     addToCache(request.url, res.clone())
     return res
@@ -153,8 +154,10 @@ async function fromCacheThenNetwork(request) {
     // return from edgenode or fallback to masternode
     edgeResponse = await fetch(edgeUrl)
   } catch(err) {
-    console.error("edgenode fetch: " + err)
-    return proxyToMasterNode(request)
+    console.warn("edgeNodeFetch: " + err)
+    const res = await proxyToMasterNode(request)
+    addToCache(request.url, res.clone())
+    return res
   }
 
   // 5. Check the hash
@@ -174,8 +177,10 @@ async function fromCacheThenNetwork(request) {
     // rebuilding the response to have the right headers
     rebuiltResponse = await rebuildResponse(checkedResponse.clone(), asset.name)
   } catch(err) {
-    console.error("rebuildResponse: " + err)
-    return proxyToMasterNode()
+    console.warn("rebuildResponse: " + err)
+    const res = await proxyToMasterNode(request)
+    addToCache(request.url, res.clone())
+    return res
   }
 
   // 7. Finally return and add it to the cache for future use
@@ -199,6 +204,7 @@ async function updateCache(request) {
 
   // if it's from a different host then don't even try
   if (!url.hostname.includes(HOST)) {
+    console.warn(url.pathname,"not from host");
     return
   }
 
@@ -212,7 +218,7 @@ async function updateCache(request) {
     }
   } catch(err) {
     // if there's a problem getting the hash just update from network
-    console.error("findHash: " + err);
+    console.warn("updateCache/findHash: " + err);
     const res = await proxyToMasterNode(request)
     console.log("updateCache: cache updated from", WEBSITE);
     return cache.put(request, res.clone())
@@ -224,7 +230,7 @@ async function updateCache(request) {
     edgenode = await pickEdgeNode(mnResponse)
   } catch(err) {
     // if there's a problem getting the hash just update from network
-    console.error("pickEdgeNode: " + err);
+    console.warn("updateCache/pickEdgeNode: " + err);
     const res = await proxyToMasterNode(request)
     console.log("updateCache: cache updated from", WEBSITE);
     return cache.put(request, res.clone())
@@ -241,7 +247,7 @@ async function updateCache(request) {
     edgeResponse = await fetch(edgeUrl)
   } catch(err) {
     // if there's a problem getting the hash just update from network
-    console.error("fetchEdgeNode: " + err);
+    console.warn("updateCache/fetchEdgeNode: " + err);
     const res = await proxyToMasterNode(request)
     console.log("updateCache: cache updated from", WEBSITE);
     return cache.put(request, res.clone())
@@ -254,8 +260,8 @@ async function updateCache(request) {
     // if the hash check fails then serve the fallback warning image
     checkedResponse = await checkHash(asset.hash,edgeResponse.clone())
   } catch(err) {
-    console.error("checkHash: " + err)
-    console.error("Hash check failed! Could not update cache!");
+    console.error("updateCache/checkHash: " + err)
+    console.error("updateCache/checkHash: hash check failed, could not update cache!");
     return
   }
 
@@ -266,7 +272,7 @@ async function updateCache(request) {
     rebuiltResponse = await rebuildResponse(checkedResponse.clone(), asset.name)
   } catch(err) {
     // if there's a problem getting the hash just update from network
-    error.log("rebuildResponse: " + err);
+    console.warn("updateCache/rebuildResponse: " + err);
     const res = await proxyToMasterNode(request)
     console.log("updateCache: cache updated from", WEBSITE);
     return cache.put(request, res.clone())
@@ -329,10 +335,10 @@ function findHash(assetName) {
     return new Promise(function(resolve,reject){
       let asset = mnResponse.assetHashes[assetName]
       if (asset === undefined) {
-        reject(Error(assetName,"asset NOT found in the fake api"))
+        reject(Error(assetName,"NOT found in the fake api"))
         return
       }
-      console.log(assetName,"asset found in the fake api");
+      console.log(assetName,"found in the fake api");
       resolve(asset)
       return
     })
@@ -361,7 +367,7 @@ function pickEdgeNode(mnList) {
   if (!MNONLINE) {
     return new Promise(function(resolve,reject){
       let edgenode = mnList.edgeNodes[0]
-      console.log(edgenode,"edgenode found in fake api");
+      console.log(edgenode,"found in fake api");
       resolve(edgenode)
       return
     })
