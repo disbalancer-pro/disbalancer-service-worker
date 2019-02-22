@@ -53,7 +53,7 @@ self.addEventListener('fetch', function(event) {
   // serve from cache, fallback on network
   event.respondWith(fromCacheThenNetwork(event.request));
   // fetch requests again in order to update the cache
-  event.waitUntil(updateCache(event.request));
+  // event.waitUntil(updateCache(event.request));
 });
 
 // open a cache and use `addAll()` with an array of assets to add all of them
@@ -91,6 +91,9 @@ function checkHash(expectedHash, response) {
             reject(Error("hash check failed.\nexpected hash: " + expectedHash + "\nactual hash: " + hash))
             return
           }
+        }).catch(function(err){
+          console.error(expectedHash);
+          console.error(err);
         })
       }
     })
@@ -126,7 +129,7 @@ async function fromCacheThenNetwork(request) {
   } catch(err) {
     // if there's a problem getting the hash just proxy it
     // also cache for next time
-    console.warn("findHash: " + err);
+    console.warn("fromCacheThenNetwork:" + err);
     const res = await proxyToMasterNode(request)
     addToCache(request.url, res.clone())
     return res
@@ -329,36 +332,50 @@ function rebuildResponse(response, assetName) {
 }
 
 // match the name to the hash
-function findHash(assetName) {
+// uses the local "fake" api response
+async function findLocalHash(assetName) {
   // makes things work when the masternode is down
-  if (!MNONLINE) {
-    return new Promise(function(resolve,reject){
-      let asset = mnResponse.assetHashes[assetName]
-      if (asset === undefined) {
-        reject(Error(assetName,"NOT found in the fake api"))
-        return
-      }
-      console.log(assetName,"found in the fake api");
-      resolve(asset)
-      return
-    })
+  const asset = mnResponse.assetHashes[assetName]
+  if (asset === undefined) {
+    console.warn(assetName, "NOT found in the fake api");
+    throw new Error("findHash:",err)
   }
+    console.log(assetName, "found in the fake api");
+    return asset
+}
 
-  // we SHOULD have the cached asset list, if we do, use it
-  return caches.match(MNLIST).then(function(cachedAssets) {
-    return cachedAssets.json().then(function(hashList) {
-      return hashList.assetHashes[assetName]
-    })
-  })
-  .catch(function(err) {
-    // if for some reason the list isnt in the cache, add it to the cached, and use it
-    console.log(err);
-    return retrieveList(MNLIST).then(function(res){
-      return res.json().then(function(hashList) {
-        return hashList.assetHashes[assetName]
-      })
-    })
-  })
+// match the name to the hash
+async function findHash(assetName) {
+  // find mnlist response in cache
+  const cache = await caches.match(MNLIST)
+  if (cache) {
+    // we did find in the cache and now we can use it
+    const list = await cache.json()
+    const hash = list.assetHashes[assetName]
+    // make sure its actually in the list
+    if (!hash) {
+      throw new Error("findHash: asset not in list")
+    }
+    return hash
+  }
+  // if not in cache well then get it from the mn direct
+  console.warn("cache: ", "asset list not in cache");
+  let response
+  try {
+    response = await retrieveList(MNLIST)
+  } catch(err) {
+    // if we can't get the list then throw an error
+    console.error(err)
+    throw new Error("findHash:",err)
+  }
+  // we successfully got the list and now we can use it
+  const list = await response.json()
+  const hash = list.assetHashes[assetName]
+  // make sure its actually in the list
+  if (!hash) {
+    throw new Error("findHash: asset not in list")
+  }
+  return hash
 }
 
 // takes the MN json response and picks an egdenode from the list
@@ -402,15 +419,20 @@ function bufferToHex1(buffer) {
 
 // retrieve asset list from MN
 function retrieveList(url) {
-  return fetch(url, {
-    method: "GET",
-    mode: "cors", // no-cors, cors, *same-origin
-    headers: {
-      "gladius-masternode-direct":"",
-    },
-  }).then(function(res){
+  return fetch(url,
+    {
+      method: "GET",
+      mode: "cors",
+      headers: {
+        "gladius-masternode-direct":"",
+      },
+    }
+  ).then(function(res) {
     addToCache(url,res.clone())
     return res
+  })
+  .catch(function(err) {
+    throw new Error(err)
   })
 }
 
@@ -422,7 +444,7 @@ async function proxyToMasterNode(request) {
 }
 
 // The fallback is an embedded SVG image.
-let FALLBACK =
+const FALLBACK =
   '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="180" stroke-linejoin="round">' +
   '  <path stroke="#DDD" stroke-width="25" d="M99,18 15,162H183z"/>' +
   '  <path stroke-width="17" fill="#FFF" d="M99,18 15,162H183z" stroke="#eee"/>' +
