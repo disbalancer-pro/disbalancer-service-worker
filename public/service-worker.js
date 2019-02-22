@@ -9,7 +9,7 @@ const MASTERNODE = 'https://blog.gladius.io'
 const MNLIST = 'https://blog.gladius.io/docile-stu'
 const MNONLINE = false
 
-let mnResponse = {
+const MNRESPONSE = {
   "assetHashes": {
     "/component---src-templates-blog-post-jsx-c65019d94aacb4255eb4.js": "eae35559dae5a6c3045823b422b5e5584c2302d933d6d2e3a260e9743e357e4a",
     "/0-9452b028c0c63d766294.js": "6ba2d9faf76eb13f81c8b2af7359ed209e064bd522b73fb319e1f63e6ff3f461",
@@ -53,7 +53,7 @@ self.addEventListener('fetch', function(event) {
   // serve from cache, fallback on network
   event.respondWith(fromCacheThenNetwork(event.request));
   // fetch requests again in order to update the cache
-  // event.waitUntil(updateCache(event.request));
+  event.waitUntil(updateCache(event.request));
 });
 
 // open a cache and use `addAll()` with an array of assets to add all of them
@@ -107,7 +107,7 @@ async function fromCacheThenNetwork(request) {
   // if it's from a different host then proxy it
   if (!url.hostname.includes(HOST)) {
     console.warn(url.pathname,"not from host");
-    return proxyToMasterNode(request)
+    return await proxyToMasterNode(request)
   }
 
   // 1. See if we have the request in the cache
@@ -130,21 +130,17 @@ async function fromCacheThenNetwork(request) {
     // if there's a problem getting the hash just proxy it
     // also cache for next time
     console.warn("fromCacheThenNetwork:" + err);
-    const res = await proxyToMasterNode(request)
-    addToCache(request.url, res.clone())
-    return res
+    return await proxyToMasterNode(request)
   }
 
   // 3. If it is on an edgenode, pick one to serve it from
   let edgenode
   try {
-    edgenode = await pickEdgeNode(mnResponse)
+    edgenode = await pickLocalEdgeNode(MNRESPONSE)
   } catch(err) {
     // if it's not on an edgenode proxy to masternode then cache for next time
     console.warn("pickEdgeNode: " + err)
-    const res = await proxyToMasterNode(request)
-    addToCache(request.url, res.clone())
-    return res
+    return await proxyToMasterNode(request)
   }
 
   // build the url
@@ -158,9 +154,7 @@ async function fromCacheThenNetwork(request) {
     edgeResponse = await fetch(edgeUrl)
   } catch(err) {
     console.warn("edgeNodeFetch: " + err)
-    const res = await proxyToMasterNode(request)
-    addToCache(request.url, res.clone())
-    return res
+    return await proxyToMasterNode(request)
   }
 
   // 5. Check the hash
@@ -181,9 +175,7 @@ async function fromCacheThenNetwork(request) {
     rebuiltResponse = await rebuildResponse(checkedResponse.clone(), asset.name)
   } catch(err) {
     console.warn("rebuildResponse: " + err)
-    const res = await proxyToMasterNode(request)
-    addToCache(request.url, res.clone())
-    return res
+    return await proxyToMasterNode(request)
   }
 
   // 7. Finally return and add it to the cache for future use
@@ -192,22 +184,14 @@ async function fromCacheThenNetwork(request) {
   return rebuiltResponse
 }
 
-// This fallback never fails since it uses embedded fallbacks.
-function useFallback() {
-  return Promise.resolve(new Response(FALLBACK, { headers: {
-    'Content-Type': 'image/svg+xml'
-  }}));
-}
-
 // update consists in opening the cache, performing a network request and
 // storing the new response data.
 async function updateCache(request) {
   const url = new URL(request.url)
-  const cache = await caches.open(CACHE)
 
   // if it's from a different host then don't even try
   if (!url.hostname.includes(HOST)) {
-    console.warn(url.pathname,"not from host");
+    console.warn("update:",url.pathname,"not from host");
     return
   }
 
@@ -222,21 +206,19 @@ async function updateCache(request) {
   } catch(err) {
     // if there's a problem getting the hash just update from network
     console.warn("updateCache/findHash: " + err);
-    const res = await proxyToMasterNode(request)
-    console.log("updateCache: cache updated from", WEBSITE);
-    return cache.put(request, res.clone())
+    console.log("updateCache: cache updated from network");
+    return await proxyToMasterNode(request)
   }
 
   // 3. If it is on an edgenode, pick one to serve it from
   let edgenode
   try {
-    edgenode = await pickEdgeNode(mnResponse)
+    edgenode = await pickLocalEdgeNode(MNRESPONSE)
   } catch(err) {
     // if there's a problem getting the hash just update from network
     console.warn("updateCache/pickEdgeNode: " + err);
-    const res = await proxyToMasterNode(request)
-    console.log("updateCache: cache updated from", WEBSITE);
-    return cache.put(request, res.clone())
+    console.log("updateCache: cache updated from network");
+    return await proxyToMasterNode(request)
   }
 
   // build the url
@@ -252,8 +234,7 @@ async function updateCache(request) {
     // if there's a problem getting the hash just update from network
     console.warn("updateCache/fetchEdgeNode: " + err);
     const res = await proxyToMasterNode(request)
-    console.log("updateCache: cache updated from", WEBSITE);
-    return cache.put(request, res.clone())
+    console.log("updateCache: cache updated from network");
   }
 
   // 5. Check the hash
@@ -276,14 +257,13 @@ async function updateCache(request) {
   } catch(err) {
     // if there's a problem getting the hash just update from network
     console.warn("updateCache/rebuildResponse: " + err);
-    const res = await proxyToMasterNode(request)
     console.log("updateCache: cache updated from", WEBSITE);
-    return cache.put(request, res.clone())
+    return await proxyToMasterNode(request)
   }
 
   // if it passes all the checks then update the cache
   console.log("updateCache: cache updated from", edgenode);
-  return cache.put(request, rebuiltResponse)
+  return addToCache(request, rebuiltResponse)
 }
 
 // takes a blob and adds the appropriate headers, this is temporary
@@ -335,7 +315,7 @@ function rebuildResponse(response, assetName) {
 // uses the local "fake" api response
 async function findLocalHash(assetName) {
   // makes things work when the masternode is down
-  const asset = mnResponse.assetHashes[assetName]
+  const asset = MNRESPONSE.assetHashes[assetName]
   if (asset === undefined) {
     console.warn(assetName, "NOT found in the fake api");
     throw new Error("findHash:",err)
@@ -378,36 +358,51 @@ async function findHash(assetName) {
   return hash
 }
 
-// takes the MN json response and picks an egdenode from the list
-function pickEdgeNode(mnList) {
+// pick an edgenode for lists
+// uses the local "fake" api response
+async function pickLocalEdgeNode(mnList) {
   // makes things work when the masternode is down
-  if (!MNONLINE) {
-    return new Promise(function(resolve,reject){
-      let edgenode = mnList.edgeNodes[0]
-      console.log(edgenode,"found in fake api");
-      resolve(edgenode)
-      return
-    })
+  const edgenode = MNRESPONSE.edgeNodes[0]
+  if (edgenode === undefined) {
+    console.warn("Edgenode not found in the fake api");
+    throw new Error("pickLocalEdgeNode:",err)
   }
-  // the list should be in the cache but if it's not, go get it and cache it
-  return caches.match(mnList).then(function(mnResponse){
-    console.log("then");
-    console.log(mnResponse);
-    return mnResponse.json().then(function(res){
-      // just pick the first node for now...
-      return res.edgeNodes[0]
-    })
-  }).catch(function(err){
-    console.log(err);
-    return retrieveList(mnList).then(function(mnResponse){
-      console.log("catch:");
-      console.log(mnResponse);
-      return mnResponse.json().then(function(res){
-        // just pick the first node for now...
-        return res.edgeNodes[0]
-      })
-    })
-  })
+    console.log(edgenode, "found in the fake api");
+    return edgenode
+}
+
+// takes the MN json response and picks an egdenode from the list
+async function pickEdgeNode(mnList) {
+  // find mnlist response in cache
+  const cache = await caches.match(MNLIST)
+  if (cache) {
+    // we did find in the cache and now we can use it
+    const list = await cache.json()
+    const node = list.edgeNodes[0]
+    // make sure its actually in the list
+    if (!node) {
+      throw new Error("pickEdgeNode: node not in list")
+    }
+    return node
+  }
+  // if not in cache well then get it from the mn direct
+  console.warn("cache: ", "node list not in cache");
+  let response
+  try {
+    response = await retrieveList(MNLIST)
+  } catch(err) {
+    // if we can't get the list then throw an error
+    console.error(err)
+    throw new Error("pickEdgeNode:",err)
+  }
+  // we successfully got the list and now we can use it
+  const list = await response.json()
+  const node = list.edgeNodes[0]
+  // make sure its actually in the list
+  if (!node) {
+    throw new Error("pickEdgeNode: node not in list")
+  }
+  return node
 }
 
 // array buffer to hex
@@ -440,7 +435,17 @@ async function proxyToMasterNode(request) {
   const url = new URL(request.url);
   console.log("proxied " + url.pathname + " to masternode");
   const res = await fetch(request.url)
+  if (url.hostname.includes(HOST)) {
+    addToCache(request.url, res.clone())
+  }
   return res
+}
+
+// This fallback never fails since it uses embedded fallbacks.
+function useFallback() {
+  return Promise.resolve(new Response(FALLBACK, { headers: {
+    'Content-Type': 'image/svg+xml'
+  }}));
 }
 
 // The fallback is an embedded SVG image.
