@@ -37,16 +37,23 @@ const MNRESPONSE = {
 
 // install stage
 self.addEventListener('install', function(event) {
-  self.skipWaiting();
+  console.log("SW installing...");
 });
 
 // active stage
 self.addEventListener('activate', function(event) {
-  event.waitUntil(function(event) {
-    // we can take control of this existing session w/o reloading it
-    return self.clients.claim();
-  });
-});
+  event.waitUntil(
+    caches.keys().then(keys => Promise.all(
+      keys.map(key => {
+        if (!CACHE.includes(key)) {
+          return caches.delete(key);
+        }
+      })
+    )).then(() => {
+      console.log('SW now ready to handle fetches!');
+    })
+  );
+})
 
 // every time a resource is requested
 self.addEventListener('fetch', function(event) {
