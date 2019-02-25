@@ -60,7 +60,7 @@ self.addEventListener('fetch', function(event) {
   // serve from cache, fallback on network
   event.respondWith(fromCacheThenNetwork(event.request));
   // fetch requests again in order to update the cache
-  event.waitUntil(updateCache(event.request));
+  // event.waitUntil(updateCache(event.request));
 });
 
 // open a cache and use `addAll()` with an array of assets to add all of them
