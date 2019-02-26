@@ -111,24 +111,28 @@ function checkHash(expectedHash, response) {
 async function fromCacheThenNetwork(request) {
   const url = new URL(request.url);
 
-  // if it's from a different host then proxy it
-  if (!url.hostname.includes(HOST)) {
-    console.warn(url.pathname,"not from host");
-    return await proxyToMasterNode(request)
-  }
-
   // 1. See if we have the request in the cache
   const cachedContent = await caches.match(request)
+
   // if it is then we just serve from cache
   if (cachedContent) {
     console.log("serving " + url.pathname + " from cache");
     return cachedContent
   }
 
+
+  // if it's from a different host then proxy it
+  if (!url.hostname.includes(HOST)) {
+    console.warn(url.pathname,"not from host");
+    return await proxyToMasterNode(request)
+  }
+
+
+
   // 2. See if it's on an edgenode (check the masternode list)
   let hash, asset
   try {
-    hash = await findHash(url.pathname)
+    hash = await findLocalHash(url.pathname)
     asset = {
       "name" : url.pathname,
       "hash" : hash
