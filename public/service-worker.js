@@ -154,14 +154,14 @@ async function fromCacheThenNetwork(request) {
     console.log("FCTN: serving " + asset.name + " from " + eurl.origin);
     return rebuiltResponse
   } catch (err) {
-    console.warn("fromCacheThenNetwork:" + err);
+    console.warn("FCTN:" + err);
     return proxyToMasterNode(request)
   }
 }
 
 // update consists in opening the cache, performing a network request and
 // storing the new response data.
-async function updateCaches(request) {
+async function updateCache(request) {
   const url = new URL(request.url)
 
   // if it's from a different host then don't even try
