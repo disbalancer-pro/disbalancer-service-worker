@@ -38,6 +38,7 @@ const MNRESPONSE = {
 // install stage
 self.addEventListener('install', function(event) {
   console.log("SW installing...");
+  event.waitUntil(retrieveList(MNLIST));
 });
 
 // active stage
@@ -137,7 +138,7 @@ async function fromCacheThenNetwork(request) {
 
   try{
     // 2. See if it's on an edgenode (check the masternode list)
-    const hash = await findLocalHash(url.pathname)
+    const hash = await findHash(url.pathname)
     const asset = {
       "name" : url.pathname,
       "hash" : hash
@@ -182,7 +183,7 @@ async function updateCache(request, mnList) {
   let hash
   try{
     // 2. See if the master list has is
-    hash = await findLocalHash(url.pathname)
+    hash = await findHash(url.pathname)
   } catch(err) {
     // well if its not on the cache list then lets delete it
     console.warn("UC:", url.pathname, "not in list, deleting from cache");
