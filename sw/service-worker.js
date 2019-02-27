@@ -1,7 +1,7 @@
 // service worker cache polyfill
 // importScripts('serviceworker-cache-polyfill.js')
 
-const CACHE = 'gladius-cache-v1'
+const CACHE = 'gladius-cache-v2'
 const WEBSITE = 'blog.gladius.io'
 const HOST = 'blog.gladius.io'
 const SEEDNODE = 'http://blog.gladius.io:8080'
@@ -82,6 +82,15 @@ function addToCache(request, response) {
   });
 }
 
+// remove a request/response pair from the cache
+function removeFromCache(request) {
+  const url = new URL(request)
+  console.log("RFC:", url.pathname, "removed from cache");
+  caches.open(CACHE).then(function(cache) {
+    cache.delete(request)
+  })
+}
+
 // check the hash of the file against the expected hash
 function checkHash(expectedHash, response) {
   return new Promise(function(resolve, reject) {
@@ -159,44 +168,41 @@ async function fromCacheThenNetwork(request) {
   }
 }
 
-// update consists in opening the cache, performing a network request and
-// storing the new response data.
-async function updateCache(request) {
-  const url = new URL(request.url)
+// update consists in opening the cache, seeing if there's new data, and then getting it
+async function updateCache(request, mnList) {
+  const url = new URL(request.url);
 
-  // if it's from a different host then don't even try
-  if (!url.hostname.includes(HOST)) {
+  // 1. Make sure this resource is cached
+  const cachedContent = await caches.match(request)
+  if (!cachedContent) {
+    // if it's not cached for any reason then just return
     return
   }
 
-  try {
-    // 2. See if it's on an edgenode (check the masternode list)
-      const hash = await findHash(url.pathname)
-      const asset = {
-        "name" : url.pathname,
-        "hash" : hash
-      }
-
-    // 3. If it is on an edgenode, pick one to serve it from
-    const edgenode = await pickLocalEdgeNode(MNRESPONSE)
-    // build the url
-    const edgeUrl = edgenode + "/content?website=" + WEBSITE + "&asset=" + asset.hash
-    const eurl = new URL(edgeUrl)
-
-    // 4. Try and get the content from the edgenode
-    const edgeResponse = await fetch(edgeUrl)
-
-    // 5. Check the hash
-    const checkedResponse = await checkHash(asset.hash,edgeResponse.clone())
-
-    // 6. Rebuild the response with the correct headers
-    const rebuiltResponse = await rebuildResponse(checkedResponse.clone(), asset.name)
-
-    // 7. if it passes all the checks then update the cache
-    return addToCache(request, rebuiltResponse)
+  let hash
+  try{
+    // 2. See if the master list has is
+    hash = await findLocalHash(url.pathname)
   } catch(err) {
+    // well if its not on the cache list then lets delete it
+    console.warn("UC:", url.pathname, "not in list, deleting from cache");
+    removeFromCache(url)
+    return
+  }
+
+  let check
+  try{
+    // 3. Do a hash comparison
+    check = await checkHash(hash,cachedContent.clone())
+  } catch (err) {
+    console.warn("UC: wrong hash, proxying to masternode");
+    // if it's the wrong hash go get new content
     return proxyToMasterNode(request)
   }
+
+  // if the cached content and mnlist have the same hash then it's up to date
+  console.log("UC:", url.pathname, "up to date");
+  return
 }
 
 // takes a blob and adds the appropriate headers, this is temporary
