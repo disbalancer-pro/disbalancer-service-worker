@@ -1,14 +1,13 @@
 // service worker cache polyfill
 // importScripts('serviceworker-cache-polyfill.js')
 
-const CACHE = 'gladius-cache-v2'
+const CACHE = 'gladius-cache-v1'
 const WEBSITE = 'blog.gladius.io'
-const HOST = 'blog.gladius.io'
-const SEEDNODE = 'http://blog.gladius.io:8080'
 const MASTERNODE = 'https://blog.gladius.io'
-const MNLIST = 'https://blog.gladius.io/docile-stu'
-const MNONLINE = false
+const MNLIST = 'https://blog.gladius.io/docile-stu' // masternode list endpoint
+const MNONLINE = false // if you want to use the "local" response, turn this to false
 
+// this is for testing purposes, it simulates the response from the masternode
 const MNRESPONSE = {
   "assetHashes": {
     "/component---src-templates-blog-post-jsx-c65019d94aacb4255eb4.js": "eae35559dae5a6c3045823b422b5e5584c2302d933d6d2e3a260e9743e357e4a",
@@ -92,29 +91,22 @@ function removeFromCache(request) {
   })
 }
 
-// check the hash of the file against the expected hash
-function checkHash(expectedHash, response) {
+// check hash of response against expected hash (name of file from masternode)
+async function checkHash(expectedHash, response) {
+  const clone = await response.clone()
+  const content = await clone.blob()
+  const fr = new FileReader()
+  fr.readAsArrayBuffer(content)
   return new Promise(function(resolve, reject) {
-    let clone = response.clone()
-    return clone.blob().then(function(content) {
-      let fr = new FileReader();
-      fr.readAsArrayBuffer(content)
-      fr.onloadend = function () {
-        crypto.subtle.digest('SHA-256', fr.result).then(function(res){
-          let hash = bufferToHex1(res)
-          if (hash.toUpperCase() === expectedHash.toUpperCase()){
-            resolve(response)
-            return
-          } else {
-            reject(Error("CH: hash check failed.\nexpected hash: " + expectedHash + "\nactual hash: " + hash))
-            return
-          }
-        }).catch(function(err){
-          console.error("CH:",expectedHash);
-          console.error("CH:",err);
-        })
+    fr.onloadend = async function() {
+      const result = await crypto.subtle.digest('SHA-256', fr.result)
+      let hash = bufferToHex(result)
+      if (hash.toUpperCase() === expectedHash.toUpperCase()) {
+        resolve(response)
+      } else {
+        reject(Error("CH: hash check failed.\nexpected: " + expectedHash + "\nactual: " + hash))
       }
-    })
+    }
   })
 }
 
@@ -132,36 +124,42 @@ async function fromCacheThenNetwork(request) {
   }
 
   // if it's from a different host then proxy it
-  if (!url.hostname.includes(HOST)) {
+  if (!url.hostname.includes(WEBSITE)) {
     return proxyToMasterNode(request)
   }
 
   try{
     // 2. See if it's on an edgenode (check the masternode list)
-    const hash = await findHash(url.pathname)
+    const hash = await findHash(MNLIST, url.pathname)
     const asset = {
       "name" : url.pathname,
       "hash" : hash
     }
+    console.log(2);
 
     // 3. If it is on an edgenode, pick one to serve it from
-    const edgenode = await pickLocalEdgeNode(MNRESPONSE)
+    const edgenode = await pickEdgeNode(MNLIST)
     // build the new url for the edgenode
     const edgeUrl = edgenode + "/content?website=" + WEBSITE + "&asset=" + asset.hash
     const eurl = new URL(edgeUrl)
+    console.log(3);
 
     // 4. Try and get the content from the edgenode
     const edgeResponse = await fetch(edgeUrl)
+    console.log(4);
 
     // 5. Check the hash
-    const checkedResponse = await checkHash(asset.hash,edgeResponse.clone())
+    const checkedResponse = await checkHash(asset.hash, edgeResponse.clone())
+    console.error(checkedResponse);
 
     // 6. Rebuild the response with the correct headers
     const rebuiltResponse = await rebuildResponse(checkedResponse.clone(), asset.name)
+    console.log(6);
 
     // 7. Finally return and add it to the cache for future use
     addToCache(request.url, rebuiltResponse.clone())
     console.log("FCTN: serving " + asset.name + " from " + eurl.origin);
+    console.log(7);
     return rebuiltResponse
   } catch (err) {
     console.warn("FCTN:" + err);
@@ -183,7 +181,7 @@ async function updateCache(request, mnList) {
   let hash
   try{
     // 2. See if the master list has is
-    hash = await findHash(url.pathname)
+    hash = await findHash(MNLIST, url.pathname)
   } catch(err) {
     // well if its not on the cache list then lets delete it
     console.warn("UC:", url.pathname, "not in list, deleting from cache");
@@ -196,9 +194,31 @@ async function updateCache(request, mnList) {
     // 3. Do a hash comparison
     check = await checkHash(hash,cachedContent.clone())
   } catch (err) {
-    console.warn("UC: wrong hash, proxying to masternode");
+    console.warn("UC: wrong hash, proxying to edgenode");
     // if it's the wrong hash go get new content
-    return proxyToMasterNode(request)
+    // 3. If it is on an edgenode, pick one to serve it from
+    try {
+      const edgenode = await pickEdgeNode(MNLIST)
+      // build the new url for the edgenode
+      const edgeUrl = edgenode + "/content?website=" + WEBSITE + "&asset=" + hash
+      const eurl = new URL(edgeUrl)
+
+      // 4. Try and get the content from the edgenode
+      const edgeResponse = await fetch(edgeUrl)
+
+      // 5. Check the hash
+      const checkedResponse = await checkHash(hash,edgeResponse.clone())
+
+      // 6. Rebuild the response with the correct headers
+      const rebuiltResponse = await rebuildResponse(checkedResponse.clone(), url.pathname)
+
+      // 7. Finally return and add it to the cache for future use
+      addToCache(url, rebuiltResponse.clone())
+    } catch (err) {
+      console.warn("UC: edgenode unavailable, proxying to masternode");
+      return proxyToMasterNode(request)
+    }
+    return
   }
 
   // if the cached content and mnlist have the same hash then it's up to date
@@ -206,67 +226,60 @@ async function updateCache(request, mnList) {
   return
 }
 
-// takes a blob and adds the appropriate headers, this is temporary
-function rebuildResponse(response, assetName) {
-  return new Promise(function(resolve, reject) {
-    let res = response.clone()
+// the edgenode just sends a body, so we need to rebuild the response
+// with some headers so it can render correctly
+async function rebuildResponse(response, assetName) {
+  const res = response.clone()
 
-    if (assetName == "/") {
-      assetName = "/index.html"
-    }
-
-    let file = assetName.split(".")
-    let fileType = file[file.length - 1]
-    let contentType = ""
-
-    switch(fileType) {
-      case "html":
-        contentType = "text/html"
-        break;
-      case "js":
-        contentType = "text/javascript"
-        break;
-      case "png":
-        contentType = "image/png"
-        break;
-      case "jpg":
-        contentType = "image/jpeg"
-        break;
-      }
-
-    return res.blob().then(function(blob) {
-      if(contentType == "") {
-        let response = new Response(blob)
-        resolve(response)
-        return
-      }
-      let init = { "status" : res.status , headers: { "Content-Encoding": "gzip","Content-Type": contentType}};
-      let myResponse =  new Response(blob, init)
-      resolve(myResponse)
-      return
-    }).catch(function(err) {
-      reject("RR:",err)
-      return
-    })
-  })
-}
-
-// match the name to the hash
-// uses the local "fake" api response
-async function findLocalHash(assetName) {
-  // makes things work when the masternode is down
-  const asset = MNRESPONSE.assetHashes[assetName]
-  if (asset === undefined) {
-    throw new Error("FLH: " + assetName + " NOT found in the fake api")
+  // this is just to give the root a .html extension
+  if (assetName == "/") {
+    assetName = "/index.html"
   }
-    console.log("FLH: ",assetName, "found in the fake api");
-    return asset
+
+  // seperate file from file type
+  const file = assetName.split(".")
+  const fileType = file[file.length - 1]
+  let contentType = ""
+
+  // we don't have a default here, but so far nothing has errored
+  // if it doesn't have a content type, the browser just figures it out
+  switch(fileType) {
+    case "html":
+      contentType = "text/html"
+      break;
+    case "js":
+      contentType = "text/javascript"
+      break;
+    case "png":
+      contentType = "image/png"
+      break;
+    case "jpg":
+      contentType = "image/jpeg"
+      break;
+  }
+
+  // extract the blob
+  const blob = await res.blob()
+  // if there is no matching content type there's nothing we can really do
+  if(contentType == "") {
+    const response = new Response(blob)
+    return response
+  }
+
+  // build the new response
+  const init = { "status" : res.status , headers: {"Content-Type": contentType}}
+  const myResponse = new Response(blob, init)
+  return myResponse
 }
 
 // match the name to the hash
-async function findHash(assetName) {
+async function findHash(mnList, assetName) {
+  if (MNONLINE) {
+    return findLocalHash(assetName)
+  }
+
   // find mnlist response in cache
-  const cache = await caches.match(MNLIST)
+  const cache = await caches.match(mnList)
   if (cache) {
     // we did find in the cache and now we can use it
     const list = await cache.json()
@@ -281,7 +294,7 @@ async function findHash(assetName) {
   console.warn("FH:", "asset list not in cache");
   let response
   try {
-    response = await retrieveList(MNLIST)
+    response = await retrieveList(mnList)
   } catch(err) {
     // if we can't get the list then throw an error
     console.error(err)
@@ -297,23 +310,14 @@ async function findHash(assetName) {
   return hash
 }
 
-// pick an edgenode for lists
-// uses the local "fake" api response
-async function pickLocalEdgeNode(mnList) {
-  // makes things work when the masternode is down
-  const edgenode = MNRESPONSE.edgeNodes[0]
-  if (edgenode === undefined) {
-    console.warn("PLEN: edgenode not found in the fake api");
-    throw new Error("PLEN:",err)
-  }
-    console.log("PLEN:",edgenode, "found in the fake api");
-    return edgenode
-}
-
 // takes the MN json response and picks an egdenode from the list
 async function pickEdgeNode(mnList) {
+  if (!MNONLINE) {
+    return pickLocalEdgeNode()
+  }
+
   // find mnlist response in cache
-  const cache = await caches.match(MNLIST)
+  const cache = await caches.match(mnList)
   if (cache) {
     // we did find in the cache and now we can use it
     const list = await cache.json()
@@ -328,7 +332,7 @@ async function pickEdgeNode(mnList) {
   console.warn("PEN: ", "node list not in cache");
   let response
   try {
-    response = await retrieveList(MNLIST)
+    response = await retrieveList(mnList)
   } catch(err) {
     // if we can't get the list then throw an error
     console.error(err)
@@ -344,8 +348,33 @@ async function pickEdgeNode(mnList) {
   return node
 }
 
+// match the name to the hash
+// uses the local "fake" api response
+async function findLocalHash(assetName) {
+  // makes things work when the masternode is down
+  const asset = MNRESPONSE.assetHashes[assetName]
+  if (asset === undefined) {
+    throw new Error("FLH: " + assetName + " NOT found in the fake api")
+  }
+    console.log("FLH: ",assetName, "found in the fake api");
+    return asset
+}
+
+// pick an edgenode for lists
+// uses the local "fake" api response
+async function pickLocalEdgeNode() {
+  // makes things work when the masternode is down
+  const edgenode = MNRESPONSE.edgeNodes[0]
+  if (edgenode === undefined) {
+    console.warn("PLEN: edgenode not found in the fake api");
+    throw new Error("PLEN:",err)
+  }
+    console.log("PLEN:",edgenode, "found in the fake api");
+    return edgenode
+}
+
 // array buffer to hex
-function bufferToHex1(buffer) {
+function bufferToHex(buffer) {
     var s = '', h = '0123456789ABCDEF';
     (new Uint8Array(buffer)).forEach((v) => { s += h[v >> 4] + h[v & 15]; });
     return s;
@@ -374,7 +403,7 @@ async function proxyToMasterNode(request) {
   const url = new URL(request.url);
   console.log("PTMN: proxied " + url.pathname + " to masternode");
   const res = await fetch(request.url)
-  if (url.hostname.includes(HOST)) {
+  if (url.hostname.includes(WEBSITE)) {
     addToCache(request.url, res.clone())
   }
   return res

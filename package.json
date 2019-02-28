@@ -8,6 +8,7 @@
     "nightmare-har-plugin": "^0.9.1"
   },
   "devDependencies": {
+    "eslint": "^5.14.1",
     "mocha": "^6.0.2"
   },
   "scripts": {
