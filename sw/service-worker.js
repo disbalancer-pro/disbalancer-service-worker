@@ -268,7 +268,7 @@ async function rebuildResponse(response, assetName) {
 
 // match the name to the hash
 async function findHash(mnList, assetName) {
-  if (MNONLINE) {
+  if (!MNONLINE) {
     return findLocalHash(assetName)
   }
 
