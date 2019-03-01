@@ -135,31 +135,25 @@ async function fromCacheThenNetwork(request) {
       "name" : url.pathname,
       "hash" : hash
     }
-    console.log(2);
 
     // 3. If it is on an edgenode, pick one to serve it from
     const edgenode = await pickEdgeNode(MNLIST)
     // build the new url for the edgenode
     const edgeUrl = edgenode + "/content?website=" + WEBSITE + "&asset=" + asset.hash
     const eurl = new URL(edgeUrl)
-    console.log(3);
 
     // 4. Try and get the content from the edgenode
     const edgeResponse = await fetch(edgeUrl)
-    console.log(4);
 
     // 5. Check the hash
     const checkedResponse = await checkHash(asset.hash, edgeResponse.clone())
-    console.error(checkedResponse);
 
     // 6. Rebuild the response with the correct headers
     const rebuiltResponse = await rebuildResponse(checkedResponse.clone(), asset.name)
-    console.log(6);
 
     // 7. Finally return and add it to the cache for future use
     addToCache(request.url, rebuiltResponse.clone())
     console.log("FCTN: serving " + asset.name + " from " + eurl.origin);
-    console.log(7);
     return rebuiltResponse
   } catch (err) {
     console.warn("FCTN:" + err);
