@@ -1,6 +1,5 @@
 node_modules/
 .DS_Store
-build/
 public/*
 !public/service-worker.js
 !public/main.js
