@@ -1,11 +1,6 @@
 // service worker cache polyfill
 // importScripts('serviceworker-cache-polyfill.js')
 
-const CACHE = 'gladius-cache-v1'
-const WEBSITE = 'blog.gladius.io'
-const MASTERNODE = 'https://blog.gladius.io'
-const MNLIST = 'https://blog.gladius.io/docile-stu' // masternode list endpoint
-
 // install stage
 self.addEventListener('install', function(event) {
   console.log("SW installing...");
