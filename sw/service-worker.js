@@ -178,8 +178,17 @@ async function proxyToMasterNode(request) {
   const url = new URL(request.url);
   console.log("PTMN: proxied " + url.pathname + " to masternode");
   const res = await fetch(request.url)
-  if (url.hostname.includes(WEBSITE)) {
-    addToCache(request.url, res.clone())
+
+  // make sure that things are in the list before we decide to cache them
+  let cacheIt
+  try {
+    cacheIt = await findHash(MNLIST, url.pathname)
+    if (url.hostname.includes(WEBSITE)) {
+      addToCache(request.url, res.clone())
+    }
+  } catch(err) {
+    console.warn(err);
   }
+
   return res
 }
