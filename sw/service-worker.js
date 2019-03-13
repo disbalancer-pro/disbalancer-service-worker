@@ -4,7 +4,23 @@
 // install stage
 self.addEventListener('install', function(event) {
   console.log("SW installing...");
-  event.waitUntil(retrieveList(MNLIST));
+  // get the asset list and cache it
+  event.waitUntil(
+    caches.open(CACHE).then(function(cache) {
+      let myHeaders = new Headers();
+      myHeaders.append('gladius-masternode-direct', '');
+
+      var myInit = {
+        method: 'GET',
+        headers: myHeaders,
+        cache: 'no-cache'
+      };
+
+      const req = new Request(MNLIST, myInit)
+
+      return cache.add(req);
+    })
+  );
 });
 
 // active stage
@@ -25,13 +41,7 @@ self.addEventListener('activate', function(event) {
 // every time a resource is requested
 self.addEventListener('fetch', function(event) {
   // serve from cache, fallback on network
-  if(isResource(event.request)) {
-    event.respondWith(fromCacheOrNetwork(event.request));
-    // fetch requests again in order to update the cache
-    // event.waitUntil(updateCache(event.request));
-  } else {
-    event.respondWith(fetch(event.request));
-  }
+  event.respondWith(fromCacheOrNetwork(event.request));
 });
 
 // A request is a resource request if it is a `GET`
@@ -40,12 +50,20 @@ function isResource(request) {
 }
 
 // add a request/response pair to the cache
-function addToCache(request, response) {
+async function addToCache(request, response) {
   const url = new URL(request)
-  console.log("ATC:" ,url.pathname, "added to cache");
-  caches.open(CACHE).then(function(cache) {
-    cache.put(request, response);
-  });
+  if (url.hostname.includes(WEBSITE)){
+    try {
+      await findHashInCache(MNLIST, url.pathname)
+    } catch(err) {
+      console.warn("ATC:",err);
+      return
+    }
+    caches.open(CACHE).then(function(cache) {
+      cache.put(request, response);
+      console.log("ATC:" ,url.pathname, "added to cache");
+    });
+  }
 }
 
 // remove a request/response pair from the cache
@@ -71,14 +89,16 @@ async function fromCacheOrNetwork(request) {
   }
 
   // 2b. If we do not, fetch from network then add to cache
-  console.log("CoN: serving", url.pathname, "from masternode");
-  const response = await fetchFromMasterNode(url)
-  addToCache(url,response.clone())
-  return response
+  const res = await fetchFromMasterNode(url)
+  // addToCache(url,res.clone())
+  return res
+
 }
 
+// fetch things from the masternode, bypass http cache
 async function fetchFromMasterNode(url) {
-  return fetch(new Request(url, { cache: 'no-cache' }))
+  console.log("CoN: serving", url.pathname, "from masternode");
+  return fetch(new Request(url, { cache: 'no-store' }))
 }
 
 // update consists in opening the cache, seeing if there's new data, and then getting it
@@ -150,6 +170,21 @@ async function findHash(mnList, assetName) {
   return hash
 }
 
+async function findHashInCache(mnList, assetName) {
+  // find mnlist response in cache
+  const cache = await caches.match(mnList)
+  if (cache) {
+    // we did find in the cache and now we can use it
+    const list = await cache.json()
+    const hash = list.assetHashes[assetName]
+    // make sure its actually in the list
+    if (!hash) {
+      throw new Error("FHIC: " + assetName + " not in list")
+    }
+    return hash
+  }
+  throw new Error("FHIC: asset list not in cache");
+}
 // array buffer to hex
 function bufferToHex(buffer) {
     var s = '', h = '0123456789ABCDEF';
@@ -175,15 +210,3 @@ function retrieveList(url) {
     throw new Error(err)
   })
 }
-
-//
-// // make sure that things are in the list before we decide to cache them
-// let cacheIt
-// try {
-//   cacheIt = await findHash(MNLIST, url.pathname)
-//   if (url.hostname.includes(WEBSITE)) {
-//     addToCache(request.url, res.clone())
-//   }
-// } catch(err) {
-//   console.warn(err);
-// }
