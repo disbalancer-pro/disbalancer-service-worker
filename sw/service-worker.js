@@ -72,9 +72,13 @@ async function fromCacheOrNetwork(request) {
 
   // 2b. If we do not, fetch from network then add to cache
   console.log("CoN: serving", url.pathname, "from masternode");
-  const response = await fetch(request)
+  const response = await fetchFromMasterNode(url)
   addToCache(url,response.clone())
   return response
+}
+
+async function fetchFromMasterNode(url) {
+  return fetch(new Request(url, { cache: 'no-cache' }))
 }
 
 // update consists in opening the cache, seeing if there's new data, and then getting it
