@@ -26,9 +26,9 @@ self.addEventListener('activate', function(event) {
 self.addEventListener('fetch', function(event) {
   // serve from cache, fallback on network
   if(isResource(event.request)) {
-    event.respondWith(fromCacheThenNetwork(event.request));
+    event.respondWith(fromCacheOrNetwork(event.request));
     // fetch requests again in order to update the cache
-    event.waitUntil(updateCache(event.request));
+    // event.waitUntil(updateCache(event.request));
   } else {
     event.respondWith(fetch(event.request));
   }
@@ -58,19 +58,23 @@ function removeFromCache(request) {
 }
 
 // serve the content from cache if it's there, if not fallback to the network
-async function fromCacheThenNetwork(request) {
+async function fromCacheOrNetwork(request) {
   const url = new URL(request.url);
 
   // 1. See if we have the request in the cache
   const cachedContent = await caches.match(request)
 
-  // if it is then we just serve from cache
+  // 2a. If we do, serve
   if (cachedContent) {
-    console.log("FCTN: serving " + url.pathname + " from cache");
+    console.log("CoN: serving", url.pathname, "from cache");
     return cachedContent
   }
 
-  return proxyToMasterNode(request)
+  // 2b. If we do not, fetch from network then add to cache
+  console.log("CoN: serving", url.pathname, "from masternode");
+  const response = await fetch(request)
+  addToCache(url,response.clone())
+  return response
 }
 
 // update consists in opening the cache, seeing if there's new data, and then getting it
@@ -168,22 +172,14 @@ function retrieveList(url) {
   })
 }
 
-// proxy to masternode
-async function proxyToMasterNode(request) {
-  const url = new URL(request.url);
-  console.log("PTMN: proxied " + url.pathname + " to masternode");
-  const res = await fetch(request.url)
-
-  // make sure that things are in the list before we decide to cache them
-  let cacheIt
-  try {
-    cacheIt = await findHash(MNLIST, url.pathname)
-    if (url.hostname.includes(WEBSITE)) {
-      addToCache(request.url, res.clone())
-    }
-  } catch(err) {
-    console.warn(err);
-  }
-
-  return res
-}
+//
+// // make sure that things are in the list before we decide to cache them
+// let cacheIt
+// try {
+//   cacheIt = await findHash(MNLIST, url.pathname)
+//   if (url.hostname.includes(WEBSITE)) {
+//     addToCache(request.url, res.clone())
+//   }
+// } catch(err) {
+//   console.warn(err);
+// }
