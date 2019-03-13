@@ -90,7 +90,7 @@ async function fromCacheOrNetwork(request) {
 
   // 2b. If we do not, fetch from network then add to cache
   const res = await fetchFromMasterNode(url)
-  // addToCache(url,res.clone())
+  addToCache(url,res.clone())
   return res
 
 }
