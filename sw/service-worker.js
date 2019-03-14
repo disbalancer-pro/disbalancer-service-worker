@@ -143,68 +143,36 @@ async function updateCache(request, mnList) {
     const res = await retrieveList(MNLIST)
   }
 
-  // let hash
-  // try{
-  //   // 2. See if the master list has is
-  //   hash = await findHashInCache(MNLIST, url.pathname)
-  // } catch(err) {
-  //   // well if its not on the cache list then lets delete it
-  //   console.warn("UC:", url.pathname, "not in list, deleting from cache");
-  //   removeFromCache(url)
-  //   return
-  // }
-  //
-  // let check
-  // try {
-  //   // 3. Do a hash comparison
-  //   check = await assertHash(hash,cachedContent)
-  // } catch (err) {
-  //   // if the hash is wrong but we trust the source, we must have old content
-  //   // so lets go and get the right content and put it right into the cache
-  //   console.warn("UC:", url.pathname,"added or updated");
-  //   caches.open(CACHE).then(function(cache) {
-  //     cache.add(request);
-  //   });
-  // }
-  // // if the cached content and mnlist have the same hash then it's up to date
-  // console.log("UC:", url.pathname, "up to date");
-  // return
-}
-
-// match the name to the hash
-async function findHash(mnList, assetName) {
-  // find mnlist response in cache
-  const cache = await caches.match(mnList)
-  if (cache) {
-    // we did find in the cache and now we can use it
-    const list = await cache.json()
-    const hash = list.assetHashes[assetName]
-    // make sure its actually in the list
-    if (!hash) {
-      throw new Error("FH: " + assetName + " not in list")
-    }
-    return hash
-  }
-  // if not in cache well then get it from the mn direct
-  console.warn("FH:", "asset list not in cache");
-  let response
-  try {
-    response = await retrieveList(mnList)
+  let hash
+  try{
+    // 2. See if the master asset list has is
+    hash = await findHashInCache(MNLIST, url.pathname)
   } catch(err) {
-    // if we can't get the list then throw an error
-    console.error(err)
-    throw new Error("FH:",err)
+    // well if its not on the cache list then lets delete it
+    console.warn("UC:", url.pathname, "not in list, deleting from cache");
+    removeFromCache(url)
+    return
   }
-  // we successfully got the list and now we can use it
-  const list = await response.json()
-  const hash = list.assetHashes[assetName]
-  // make sure its actually in the list
-  if (!hash) {
-    throw new Error("FH: asset not in list")
+
+  let check
+  try {
+    // 3. Do a hash comparison
+    check = await assertHash(hash,cachedContent)
+  } catch (err) {
+    // if the hash is wrong but we trust the source, we must have wrong content
+    // so lets go and get the right content and put it right into the cache
+    console.warn("UC:", url.pathname,"updated");
+    caches.open(CACHE).then(function(cache) {
+      cache.add(request);
+    });
+    return
   }
-  return hash
+  // if the cached content and mnlist have the same hash then it's up to date
+  console.log("UC:", url.pathname, "up to date");
+  return
 }
 
+// find hash from the asset list in cache
 async function findHashInCache(mnList, assetName) {
   // find mnlist response in cache
   const cache = await caches.match(mnList)
