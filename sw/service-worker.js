@@ -78,6 +78,30 @@ async function assertHash(expectedHash, response) {
 async function addToCache(request, response) {
   const url = new URL(request)
   if (url.hostname.includes(WEBSITE)){
+    let clients
+    let page = new URL(MASTERNODE)
+    try {
+      clients = await self.clients.matchAll({type:"window"})
+      for (let i = 0; i < clients.length; i++) {
+        if (clients[i].focused) {
+          if (clients[i].url == url.href) {
+            page = new URL(clients[i].url)
+          }
+        }
+      }
+    } catch(err) {
+      console.error("UC:",err);
+    }
+
+    // 2. Update the asset list in cache when we update the current page
+    if(url.pathname == page.pathname){
+      const res = await retrieveList(MNLIST)
+      caches.open(CACHE).then(function(cache) {
+        cache.put(MNLIST, res);
+        console.log("ATC: asset list updated");
+        return
+      });
+    }
     if(url.href != MNLIST) {
       try {
         await findHashInCache(MNLIST, url.pathname)
@@ -141,31 +165,6 @@ async function updateCache(request, mnList) {
   if (!cachedContent) {
     // if it's not cached for any reason then just return
     return
-  }
-
-  let clients
-  let page
-  try {
-    clients = await self.clients.matchAll({type:"window"})
-    for (let i = 0; i < clients.length; i++) {
-      if (clients[i].focused) {
-        if (clients[i].url == url.href) {
-          page = new URL(clients[i].url)
-        }
-      }
-    }
-    if (page == 'undefined') {
-      page = new URL(WEBSITE)
-    }
-  } catch(err) {
-    console.error("UC:",err);
-    page = new URL(WEBSITE)
-  }
-
-
-  // 2. Update the asset list in cache when we update the current page
-  if(url.pathname == page.pathname){
-    const res = await retrieveList(MNLIST)
   }
 
   let hash
