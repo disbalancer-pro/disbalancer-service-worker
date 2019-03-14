@@ -42,6 +42,7 @@ self.addEventListener('activate', function(event) {
 self.addEventListener('fetch', function(event) {
   // serve from cache, fallback on network
   event.respondWith(fromCacheOrNetwork(event.request));
+  event.waitUntil(updateCache(event.request))
 });
 
 // A request is a resource request if it is a `GET`
@@ -49,15 +50,36 @@ function isResource(request) {
   return request.method === 'GET';
 }
 
+// check hash of response against expected hash (name of file from masternode)
+async function assertHash(expectedHash, response) {
+  const clone = await response.clone()
+  const content = await clone.blob()
+  const fr = new FileReader()
+  fr.readAsArrayBuffer(content)
+  return new Promise(function(resolve, reject) {
+    fr.onloadend = async function() {
+      const result = await crypto.subtle.digest('SHA-256', fr.result)
+      let hash = bufferToHex(result)
+      if (hash.toUpperCase() === expectedHash.toUpperCase()) {
+        resolve(response)
+      } else {
+        reject(Error("CH: hash check failed.\nexpected: " + expectedHash + "\nactual: " + hash))
+      }
+    }
+  })
+}
+
 // add a request/response pair to the cache
 async function addToCache(request, response) {
   const url = new URL(request)
   if (url.hostname.includes(WEBSITE)){
-    try {
-      await findHashInCache(MNLIST, url.pathname)
-    } catch(err) {
-      console.warn("ATC:",err);
-      return
+    if(url.href != MNLIST) {
+      try {
+        await findHashInCache(MNLIST, url.pathname)
+      } catch(err) {
+        console.warn("ATC:",err);
+        return
+      }
     }
     caches.open(CACHE).then(function(cache) {
       cache.put(request, response);
@@ -97,8 +119,12 @@ async function fromCacheOrNetwork(request) {
 
 // fetch things from the masternode, bypass http cache
 async function fetchFromMasterNode(url) {
+  const newUrl = new URL(url)
   console.log("CoN: serving", url.pathname, "from masternode");
-  return fetch(new Request(url, { cache: 'no-store' }))
+  if (newUrl.hostname.includes(WEBSITE)) {
+    return fetch(new Request(url, { cache: 'no-store' }))
+  }
+  return fetch(url)
 }
 
 // update consists in opening the cache, seeing if there's new data, and then getting it
@@ -112,28 +138,37 @@ async function updateCache(request, mnList) {
     return
   }
 
-  let hash
-  try{
-    // 2. See if the master list has is
-    hash = await findHash(MNLIST, url.pathname)
-  } catch(err) {
-    // well if its not on the cache list then lets delete it
-    console.warn("UC:", url.pathname, "not in list, deleting from cache");
-    removeFromCache(url)
-    return
+  // 2. Update the asset list in cache when we update the /
+  if(url.pathname == "/"){
+    const res = await retrieveList(MNLIST)
   }
 
-  let check
-  try {
-    // 3. Do a hash comparison
-    check = await assertHash(hash,cachedContent.clone())
-  } catch (err) {
-    console.warn("UC:", url.pathname,"out of date, updating the cache");
-    return proxyToMasterNode(request)
-  }
-  // if the cached content and mnlist have the same hash then it's up to date
-  console.log("UC:", url.pathname, "up to date");
-  return
+  // let hash
+  // try{
+  //   // 2. See if the master list has is
+  //   hash = await findHashInCache(MNLIST, url.pathname)
+  // } catch(err) {
+  //   // well if its not on the cache list then lets delete it
+  //   console.warn("UC:", url.pathname, "not in list, deleting from cache");
+  //   removeFromCache(url)
+  //   return
+  // }
+  //
+  // let check
+  // try {
+  //   // 3. Do a hash comparison
+  //   check = await assertHash(hash,cachedContent)
+  // } catch (err) {
+  //   // if the hash is wrong but we trust the source, we must have old content
+  //   // so lets go and get the right content and put it right into the cache
+  //   console.warn("UC:", url.pathname,"added or updated");
+  //   caches.open(CACHE).then(function(cache) {
+  //     cache.add(request);
+  //   });
+  // }
+  // // if the cached content and mnlist have the same hash then it's up to date
+  // console.log("UC:", url.pathname, "up to date");
+  // return
 }
 
 // match the name to the hash
@@ -185,6 +220,7 @@ async function findHashInCache(mnList, assetName) {
   }
   throw new Error("FHIC: asset list not in cache");
 }
+
 // array buffer to hex
 function bufferToHex(buffer) {
     var s = '', h = '0123456789ABCDEF';
@@ -193,20 +229,20 @@ function bufferToHex(buffer) {
 }
 
 // retrieve asset list from MN
-function retrieveList(url) {
-  return fetch(url,
-    {
-      method: "GET",
-      mode: "cors",
-      headers: {
-        "gladius-masternode-direct":"",
-      },
-    }
-  ).then(function(res) {
-    addToCache(url,res.clone())
+async function retrieveList(url) {
+  try {
+    const res = await fetch(url,
+      {
+        method: "GET",
+        mode: "cors",
+        headers: {
+          "gladius-masternode-direct":"",
+        },
+        cache: "no-store"
+      })
+    await addToCache(url,res.clone())
     return res
-  })
-  .catch(function(err) {
+  } catch(err) {
     throw new Error(err)
-  })
+  }
 }
