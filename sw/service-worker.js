@@ -41,8 +41,13 @@ self.addEventListener('activate', function(event) {
 // every time a resource is requested
 self.addEventListener('fetch', function(event) {
   // serve from cache, fallback on network
-  event.respondWith(fromCacheOrNetwork(event.request));
-  event.waitUntil(updateCache(event.request))
+
+  if (isResource(event.request)) {
+    event.respondWith(fromCacheOrNetwork(event.request));
+    event.waitUntil(updateCache(event.request))
+  } else {
+    event.respondWith(fetchFromMasterNode(event.request))
+  }
 });
 
 // A request is a resource request if it is a `GET`
@@ -138,8 +143,28 @@ async function updateCache(request, mnList) {
     return
   }
 
-  // 2. Update the asset list in cache when we update the /
-  if(url.pathname == "/"){
+  let clients
+  let page
+  try {
+    clients = await self.clients.matchAll({type:"window"})
+    for (let i = 0; i < clients.length; i++) {
+      if (clients[i].focused) {
+        if (clients[i].url == url.href) {
+          page = new URL(clients[i].url)
+        }
+      }
+    }
+    if (page == 'undefined') {
+      page = new URL(WEBSITE)
+    }
+  } catch(err) {
+    console.error("UC:",err);
+    page = new URL(WEBSITE)
+  }
+
+
+  // 2. Update the asset list in cache when we update the current page
+  if(url.pathname == page.pathname){
     const res = await retrieveList(MNLIST)
   }
 
