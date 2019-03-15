@@ -77,6 +77,8 @@ async function assertHash(expectedHash, response) {
 // add a request/response pair to the cache
 async function addToCache(request, response) {
   const url = new URL(request)
+
+  // we need this to tie our asset list to the main page
   if (url.hostname.includes(WEBSITE)){
     let clients
     let page = new URL(MASTERNODE)
@@ -94,7 +96,7 @@ async function addToCache(request, response) {
     }
 
     // 2. Update the asset list in cache when we update the current page
-    if(url.pathname == page.pathname){
+    if(url.href == page.href){
       const res = await retrieveList(MNLIST)
       caches.open(CACHE).then(function(cache) {
         cache.put(MNLIST, res);
@@ -102,9 +104,11 @@ async function addToCache(request, response) {
         return
       });
     }
+
     if(url.href != MNLIST) {
       try {
-        await findHashInCache(MNLIST, url.pathname)
+        const name = url.pathname + url.search
+        await findHashInCache(MNLIST, name)
       } catch(err) {
         console.warn("ATC:",err);
         return
@@ -170,7 +174,7 @@ async function updateCache(request, mnList) {
   let hash
   try{
     // 2. See if the master asset list has is
-    hash = await findHashInCache(MNLIST, url.pathname)
+    hash = await findHashInCache(MNLIST, url.pathname + url.search)
   } catch(err) {
     // well if its not on the cache list then lets delete it
     console.warn("UC:", url.pathname, "not in list, deleting from cache");
