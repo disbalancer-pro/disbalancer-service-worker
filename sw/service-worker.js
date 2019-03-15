@@ -236,7 +236,6 @@ async function retrieveList(url) {
         },
         cache: "no-store"
       })
-    await addToCache(url,res.clone())
     return res
   } catch(err) {
     throw new Error(err)
