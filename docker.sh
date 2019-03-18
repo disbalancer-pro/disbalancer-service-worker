@@ -1,11 +1,9 @@
 #!/bin/bash
-echo "Creating Javascript Files"
+echo "Creating Javascript File"
 
 echo "const CACHE = '$SW_CACHE$(date +%s)';const WEBSITE = '$SW_DOMAIN';const MASTERNODE = 'https://$SW_DOMAIN';const MNLIST = 'https://$SW_DOMAIN/masternode-cache-list';" > /build/service-worker.js
-cp /build/service-worker.js /build/service-worker-debug.js
 
 cat /data/service-worker.js >> /build/service-worker.js
-cat /data/service-worker.js >> /build/service-worker-debug.js
 
 # Obfuscator
 # https://github.com/javascript-obfuscator/javascript-obfuscator/
