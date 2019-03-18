@@ -23,14 +23,7 @@ self.addEventListener('activate', function(event) {
 
 // every time a resource is requested
 self.addEventListener('fetch', function(event) {
-  // serve from cache, fallback on network
-
-  if (isResource(event.request)) {
-    event.respondWith(fromCacheOrNetwork(event.request));
-    event.waitUntil(updateCache(event.request))
-  } else {
-    event.respondWith(fetchFromMasterNode(event.request))
-  }
+    event.respondWith(networkThenCache(event.request))
 });
 
 // A request is a resource request if it is a `GET`
@@ -41,143 +34,54 @@ function isResource(request) {
 // add a request/response pair to the cache
 async function addToCache(request, response) {
   const url = new URL(request)
-
-  if(url.hostname.includes(WEBSITE)) {
-    caches.open(CACHE).then(function(cache) {
-      cache.put(request, response);
-      console.log("ATC:" ,url.pathname, "added to cache");
-    });
-  }
-}
-
-// remove a request/response pair from the cache
-async function removeFromCache(request) {
-  const url = new URL(request)
   caches.open(CACHE).then(function(cache) {
-    cache.delete(request)
-    console.log("RFC:", url.pathname, "removed from cache");
-  })
-}
-
-// serve the content from cache if it's there, if not fallback to the network
-async function fromCacheOrNetwork(request) {
-  const url = new URL(request.url);
-
-  // 1. See if we have the request in the cache
-  const cachedContent = await caches.match(request)
-
-  // 2a. If we do, serve (unless it's the MNLIST)
-  if (cachedContent && url.href != MNLIST) {
-    console.log("CoN: serving", url.pathname, "from cache");
-    return cachedContent
+    cache.put(request, response);
+    console.log("ATC:" ,url.pathname, "added to cache");
+  });
   }
 
-  // 2b. If we do not, fetch from network then add to cache
-  const res = await fetchFromMasterNode(url)
-  addToCache(url,res.clone())
-  return res
+// http cache then disk cache then network
+async function networkThenCache(request) {
+  const url = new URL(request.url)
 
-}
-
-// fetch things from the masternode, bypass http cache
-async function fetchFromMasterNode(url) {
-  const newUrl = new URL(url)
-  console.log("CoN: serving", url.pathname, "from masternode");
-  if (newUrl.hostname.includes(WEBSITE)) {
-    if (newUrl.href == MNLIST) {
-      return fetch(url, {
-        method: "GET",
-        mode: "cors",
-        headers: { 
-        "gladius-masternode-direct":"",
-        },
-        cache: "no-store"
-      })
-    }
-    return fetch(new Request(url, { cache: 'no-store' }))
-  }
-  return fetch(url)
-}
-
-// update consists in opening the cache, seeing if there's new data, and then getting it
-async function updateCache(request, mnList) {
-  const url = new URL(request.url);
-
-  // never update the MNLIST since we get it at the beginning of every page load
-  if(url.href == MNLIST) {
-    return
+  // if its not on our site then just fetch from network
+  if(!url.hostname.includes(WEBSITE)) {
+    return fetch(url)
   }
 
-  // 1. Make sure this resource is cached
-  const cachedContent = await caches.match(request)
-  if (!cachedContent) {
-    // if it's not cached for any reason then just return
-    return
-  }
-
-  let hash
-  try{
-    // 2. See if the master asset list has is
-    hash = await findHashInCache(MNLIST, url.pathname + url.search)
-  } catch(err) {
-    // well if its not on the cache list then lets delete it
-    console.warn("UC:", url.pathname, "not in list, deleting from cache");
-    removeFromCache(url)
-    return
-  }
-
-  let check
+  // if its in browser cache return immediately
+  let response
   try {
-    // 3. Do a hash comparison
-    check = await assertHash(hash,cachedContent)
+    // fetch only from browser cache, if not there check elsewhere
+    response = await fetch(new Request(url, {mode:"same-origin", cache: "only-if-cached"}))
+    console.log("NC: serving", url.pathname, "from http cache");
+    addToCache(url, response.clone())
+    return response
   } catch (err) {
-    // if the hash is wrong but we trust the source, we must have wrong content
-    // so lets go and get the right content and put it right into the cache
-    console.warn("UC:", url.pathname,"updated");
-    caches.open(CACHE).then(function(cache) {
-      cache.add(request);
-    });
-    return
-  }
-  // if the cached content and mnlist have the same hash then it's up to date
-  console.log("UC:", url.pathname, "up to date");
-  return
-}
+    // it was not in the browser cache
+    console.error("NC:",err);
 
-// check hash of response against expected hash (name of file from masternode)
-async function assertHash(expectedHash, response) {
-  const clone = await response.clone()
-  const content = await clone.blob()
-  const fr = new FileReader()
-  fr.readAsArrayBuffer(content)
-  return new Promise(function(resolve, reject) {
-    fr.onloadend = async function() {
-      const result = await crypto.subtle.digest('SHA-256', fr.result)
-      let hash = bufferToHex(result)
-      if (hash.toUpperCase() === expectedHash.toUpperCase()) {
-        resolve(response)
-      } else {
-        reject(Error("CH: hash check failed.\nexpected: " + expectedHash + "\nactual: " + hash))
-      }
+    // let's check the disk cache
+    const cachedContent = await caches.match(request)
+    if (cachedContent) {
+      console.log("NC: serving", url.pathname, "from disk cache");
+      return cachedContent
     }
-  })
-}
 
-// find hash from the asset list in cache
-async function findHashInCache(mnList, assetName) {
-  // find mnlist response in cache
-  const cache = await caches.match(mnList)
-  if (cache) {
-    // we did find in the cache and now we can use it
-    const list = await cache.json()
-    const hash = list.assetHashes[assetName]
-    // make sure its actually in the list
-    if (!hash) {
-      throw new Error("FHIC: " + assetName + " not in list")
+    // looks like we have to fallback to the network
+    let res
+    try {
+      res = await fetch(url)
+      console.log("NC: serving", url.pathname, "from network");
+      // cache in disk for later
+      addToCache(url, res.clone())
+      return res
+    } catch (err) {
+      // we are offline and we dont have this content
+      console.error("NC:", "offline and", url.pathname, "not in cache");
+      return useFallback()
     }
-    return hash
   }
-  throw new Error("FHIC: asset list not in cache");
 }
 
 // array buffer to hex
@@ -187,3 +91,18 @@ function bufferToHex(buffer) {
     return s;
 }
 
+// This fallback never fails since it uses embedded fallbacks.
+function useFallback() {
+  return Promise.resolve(new Response(FALLBACK, { headers: {
+    'Content-Type': 'image/svg+xml'
+  }}));
+}
+
+// The fallback is an embedded SVG image.
+const FALLBACK =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="180" stroke-linejoin="round">' +
+  '  <path stroke="#DDD" stroke-width="25" d="M99,18 15,162H183z"/>' +
+  '  <path stroke-width="17" fill="#FFF" d="M99,18 15,162H183z" stroke="#eee"/>' +
+  '  <path d="M91,70a9,9 0 0,1 18,0l-5,50a4,4 0 0,1-8,0z" fill="#aaa"/>' +
+  '  <circle cy="138" r="9" cx="100" fill="#aaa"/>' +
+  '</svg>';
