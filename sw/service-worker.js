@@ -4,23 +4,6 @@
 // install stage
 self.addEventListener('install', function(event) {
   console.log("SW installing...");
-  // get the asset list and cache it
-  event.waitUntil(
-    caches.open(CACHE).then(function(cache) {
-      let myHeaders = new Headers();
-      myHeaders.append('gladius-masternode-direct', '');
-
-      var myInit = {
-        method: 'GET',
-        headers: myHeaders,
-        cache: 'no-cache'
-      };
-
-      const req = new Request(MNLIST, myInit)
-
-      return cache.add(req);
-    })
-  );
 });
 
 // active stage
@@ -55,65 +38,11 @@ function isResource(request) {
   return request.method === 'GET';
 }
 
-// check hash of response against expected hash (name of file from masternode)
-async function assertHash(expectedHash, response) {
-  const clone = await response.clone()
-  const content = await clone.blob()
-  const fr = new FileReader()
-  fr.readAsArrayBuffer(content)
-  return new Promise(function(resolve, reject) {
-    fr.onloadend = async function() {
-      const result = await crypto.subtle.digest('SHA-256', fr.result)
-      let hash = bufferToHex(result)
-      if (hash.toUpperCase() === expectedHash.toUpperCase()) {
-        resolve(response)
-      } else {
-        reject(Error("CH: hash check failed.\nexpected: " + expectedHash + "\nactual: " + hash))
-      }
-    }
-  })
-}
-
 // add a request/response pair to the cache
 async function addToCache(request, response) {
   const url = new URL(request)
 
-  // we need this to tie our asset list to the main page
-  if (url.hostname.includes(WEBSITE)){
-    let clients
-    let page = new URL(MASTERNODE)
-    try {
-      clients = await self.clients.matchAll({type:"window"})
-      for (let i = 0; i < clients.length; i++) {
-        if (clients[i].focused) {
-          if (clients[i].url == url.href) {
-            page = new URL(clients[i].url)
-          }
-        }
-      }
-    } catch(err) {
-      console.error("UC:",err);
-    }
-
-    // 2. Update the asset list in cache when we update the current page
-    if(url.href == page.href){
-      const res = await retrieveList(MNLIST)
-      caches.open(CACHE).then(function(cache) {
-        cache.put(MNLIST, res);
-        console.log("ATC: asset list updated");
-        return
-      });
-    }
-
-    if(url.href != MNLIST) {
-      try {
-        const name = url.pathname + url.search
-        await findHashInCache(MNLIST, name)
-      } catch(err) {
-        console.warn("ATC:",err);
-        return
-      }
-    }
+  if(url.hostname.includes(WEBSITE)) {
     caches.open(CACHE).then(function(cache) {
       cache.put(request, response);
       console.log("ATC:" ,url.pathname, "added to cache");
@@ -122,11 +51,11 @@ async function addToCache(request, response) {
 }
 
 // remove a request/response pair from the cache
-function removeFromCache(request) {
+async function removeFromCache(request) {
   const url = new URL(request)
-  console.log("RFC:", url.pathname, "removed from cache");
   caches.open(CACHE).then(function(cache) {
     cache.delete(request)
+    console.log("RFC:", url.pathname, "removed from cache");
   })
 }
 
@@ -137,8 +66,8 @@ async function fromCacheOrNetwork(request) {
   // 1. See if we have the request in the cache
   const cachedContent = await caches.match(request)
 
-  // 2a. If we do, serve
-  if (cachedContent) {
+  // 2a. If we do, serve (unless it's the MNLIST)
+  if (cachedContent && url.href != MNLIST) {
     console.log("CoN: serving", url.pathname, "from cache");
     return cachedContent
   }
@@ -155,6 +84,16 @@ async function fetchFromMasterNode(url) {
   const newUrl = new URL(url)
   console.log("CoN: serving", url.pathname, "from masternode");
   if (newUrl.hostname.includes(WEBSITE)) {
+    if (newUrl.href == MNLIST) {
+      return fetch(url, {
+        method: "GET",
+        mode: "cors",
+        headers: { 
+        "gladius-masternode-direct":"",
+        },
+        cache: "no-store"
+      })
+    }
     return fetch(new Request(url, { cache: 'no-store' }))
   }
   return fetch(url)
@@ -163,6 +102,11 @@ async function fetchFromMasterNode(url) {
 // update consists in opening the cache, seeing if there's new data, and then getting it
 async function updateCache(request, mnList) {
   const url = new URL(request.url);
+
+  // never update the MNLIST since we get it at the beginning of every page load
+  if(url.href == MNLIST) {
+    return
+  }
 
   // 1. Make sure this resource is cached
   const cachedContent = await caches.match(request)
@@ -200,6 +144,25 @@ async function updateCache(request, mnList) {
   return
 }
 
+// check hash of response against expected hash (name of file from masternode)
+async function assertHash(expectedHash, response) {
+  const clone = await response.clone()
+  const content = await clone.blob()
+  const fr = new FileReader()
+  fr.readAsArrayBuffer(content)
+  return new Promise(function(resolve, reject) {
+    fr.onloadend = async function() {
+      const result = await crypto.subtle.digest('SHA-256', fr.result)
+      let hash = bufferToHex(result)
+      if (hash.toUpperCase() === expectedHash.toUpperCase()) {
+        resolve(response)
+      } else {
+        reject(Error("CH: hash check failed.\nexpected: " + expectedHash + "\nactual: " + hash))
+      }
+    }
+  })
+}
+
 // find hash from the asset list in cache
 async function findHashInCache(mnList, assetName) {
   // find mnlist response in cache
@@ -224,20 +187,3 @@ function bufferToHex(buffer) {
     return s;
 }
 
-// retrieve asset list from MN
-async function retrieveList(url) {
-  try {
-    const res = await fetch(url,
-      {
-        method: "GET",
-        mode: "cors",
-        headers: {
-          "gladius-masternode-direct":"",
-        },
-        cache: "no-store"
-      })
-    return res
-  } catch(err) {
-    throw new Error(err)
-  }
-}
