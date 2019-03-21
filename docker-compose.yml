@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: "Dockerfile"
     env_file:
-    - build.env
+      - build.env
     volumes:
       - "build:/build"
 volumes:
