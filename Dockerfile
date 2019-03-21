@@ -1,14 +1,18 @@
 FROM alpine
 
 ENV SW_DOMAIN='example.com'
-
-ENV SW_CACHE='gladius-cache-v1'
+ENV SW_CACHE_TAG='gladius-cache-v'
+ENV SW_USE_EDGENODES=false
+ENV SW_OBFUSCATE=false
 
 WORKDIR /data
 
 COPY sw/service-worker.js .
+COPY sw/service-worker-accelerator.js .
+COPY docker.sh .
 
 RUN mkdir /build
+
 VOLUME /build
 
-CMD echo "const CACHE = '$SW_CACHE';const WEBSITE = '$SW_DOMAIN';const MASTERNODE = 'https://$SW_DOMAIN';const MNLIST = 'https://$SW_DOMAIN/docile-stu';" > /build/service-worker.js;cat /data/service-worker.js >> /build/service-worker.js
+CMD ["sh", "docker.sh"]
