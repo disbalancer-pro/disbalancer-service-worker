@@ -9,8 +9,7 @@ RUN npm install -g javascript-obfuscator; mkdir /build
 
 WORKDIR /data
 
-COPY sw/service-worker.js .
-COPY sw/service-worker-accelerator.js .
+COPY sw/service-worker-*.js ./
 COPY docker.sh .
 
 VOLUME /build

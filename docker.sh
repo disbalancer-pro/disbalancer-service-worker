@@ -8,9 +8,9 @@ const MNLIST = 'https://$SW_DOMAIN/docile-stu';\n\
 \n\
 " > /build/service-worker.js
 
-SW_FILE="service-worker.js"
+SW_FILE="service-worker-edgenode.js"
 
-if $USE_EDGE_NODES; then
+if $SW_USE_EDGE_NODES; then
   echo "Building for Edge Nodes"
 else
   echo "Building for Accelerator"

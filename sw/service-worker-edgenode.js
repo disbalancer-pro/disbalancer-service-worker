@@ -187,3 +187,35 @@ function bufferToHex(buffer) {
     return s;
 }
 
+<<<<<<< HEAD:sw/service-worker.js
+=======
+// retrieve asset list from MN
+function retrieveList(url) {
+  return fetch(url,
+    {
+      method: "GET",
+      mode: "cors",
+      headers: {
+        "gladius-masternode-direct":"",
+      },
+    }
+  ).then(function(res) {
+    addToCache(url,res.clone())
+    return res
+  })
+  .catch(function(err) {
+    throw new Error(err)
+  })
+}
+
+// proxy to masternode
+async function proxyToMasterNode(request) {
+  const url = new URL(request.url);
+  console.log("PTMN: proxied " + url.pathname + " to masternode");
+  const res = await fetch(request.url)
+  if (url.hostname.includes(WEBSITE)) {
+    addToCache(request.url, res.clone())
+  }
+  return res
+}
+>>>>>>> 079f705eda942c7c0fb71610b1ef0be4f3c02747:sw/edgenode-sw.js
