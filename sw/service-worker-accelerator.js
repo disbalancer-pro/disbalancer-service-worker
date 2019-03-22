@@ -8,27 +8,54 @@ self.addEventListener('install', function(event) {
 
 // active stage
 self.addEventListener('activate', function(event) {
-  event.waitUntil(
-    caches.keys().then(keys => Promise.all(
-      keys.map(key => {
-        if (!CACHE.includes(key)) {
-          return caches.delete(key);
-        }
-      })
-    )).then(() => {
-      console.log('SW now ready to handle fetches!');
-    })
-  );
+  event.waitUntil(deleteOldCaches(CACHE));
 })
 
 // every time a resource is requested
 self.addEventListener('fetch', function(event) {
-    event.respondWith(networkThenCache(event.request))
+    event.respondWith(networkCacheRace(event.request));
 });
 
 // A request is a resource request if it is a `GET`
 function isResource(request) {
   return request.method === 'GET';
+}
+
+// delete old caches
+function deleteOldCaches(currentCache) {
+  // get a list of caches
+  return caches.keys().then(keys => Promise.all(
+    // for each cache
+    keys.map(key => {
+      // if it's not the currentCache
+      if(!currentCache.includes(key)) {
+        // delete it
+        return caches.delete(key)
+      }
+    })
+  ))
+}
+
+// race promises against each other and return the first one to finish
+function promiseAny(promises) {
+  return new Promise((resolve, reject) => {
+    // make sure `promises` are all promises
+    promises = promises.map(p => Promise.resolve(p));
+    // resolve this promise as soon as one resolves
+    promises.forEach(p => p.then(resolve(p)));
+    // reject if all promises reject
+    promises.reduce((a, b) => a.catch(() => b)).catch(() => reject(Error("network and cache down")));
+  })
+}
+
+// have the network race against the cache
+async function networkCacheRace(request) {
+  try {
+    return promiseAny([fetch(request), caches.match(request)])
+  } catch (err) {
+    console.error("offline and not in cache");
+    return useFallback()
+  }
 }
 
 // add a request/response pair to the cache
@@ -38,7 +65,7 @@ async function addToCache(request, response) {
     cache.put(request, response);
     console.log("ATC:" ,url.pathname, "added to cache");
   });
-  }
+}
 
 // http cache then disk cache then network
 async function networkThenCache(request) {
