@@ -37,29 +37,42 @@ function deleteOldCaches(currentCache) {
   ))
 }
 
-// race promises against each other and return the first one to finish
-function promiseAny(promises) {
+// resolves when the first promise resolves, rejects if all reject
+async function oneSuccess(promises) {
+  try {
+    // go through all of the promises
+    const err = await Promise.all(promises.map(p => {
+      // on each promise we REJECT if the promise RESOLVES
+      // this takes advantage of Promise.all rejection behavior
+      // and lets us return the first resolved promise
+      return p.then(val => Promise.reject(val), err => Promise.resolve(err))
+    }))
+    // if Promise.all resolves it should return an array of errors
+    throw new Error("all promises failed")
+  } catch (val) {
+    // if Promise.all rejects then it should contain our result
+    return val
+  }
+}
+
+// wrapper that creates a promise that rejects if the asset is not in the cache
+async function inCache(request) {
   return new Promise((resolve, reject) => {
-    // make sure `promises` are all promises
-    promises = promises.map(p => Promise.resolve(p));
-    // resolve this promise as soon as one resolves
-    promises.forEach(p => p.then(resolve(p)));
-    // reject if all promises reject
-    promises.reduce((a, b) => a.catch(() => b)).catch(() => reject(Error("network and cache down")));
+    caches.match(request).then((req) => req ? resolve(req) : reject(Error("not in cache")));
   })
 }
 
 // have the network race against the cache
 async function networkCacheRace(request) {
   try {
-    const response = await promiseAny([fetch(request), caches.match(request)])
+    const response = await oneSuccess([fetch(request), inCache(request)])
     addToCache(request.url, response.clone())
     if (request.url == MNLIST){
       updateCache(response.clone())
     }
     return response
   } catch (err) {
-    console.error("offline and not in cache");
+    console.error(err);
     return useFallback()
   }
 }
