@@ -9,6 +9,7 @@ self.addEventListener('install', function(event) {
 // active stage
 self.addEventListener('activate', function(event) {
   event.waitUntil(deleteOldCaches(CACHE));
+  event.waitUntil(console.log("SW ready!"))
 })
 
 // every time a resource is requested
@@ -51,7 +52,12 @@ function promiseAny(promises) {
 // have the network race against the cache
 async function networkCacheRace(request) {
   try {
-    return promiseAny([fetch(request), caches.match(request)])
+    const response = await promiseAny([fetch(request), caches.match(request)])
+    addToCache(request.url, response.clone())
+    if (request.url == MNLIST){
+      updateCache(response.clone())
+    }
+    return response
   } catch (err) {
     console.error("offline and not in cache");
     return useFallback()
@@ -60,55 +66,51 @@ async function networkCacheRace(request) {
 
 // add a request/response pair to the cache
 async function addToCache(request, response) {
+  const match = await caches.match(request)
+  if (match) {
+    return
+  }
+
   const url = new URL(request)
+
   caches.open(CACHE).then(function(cache) {
-    cache.put(request, response);
-    console.log("ATC:" ,url.pathname, "added to cache");
+    cache.put(request, response).then(() => {
+      console.log("ATC:" ,url.pathname, "added to cache");
+    })
   });
 }
 
-// http cache then disk cache then network
-async function networkThenCache(request) {
-  const url = new URL(request.url)
+// deal with cache adding and updating
+async function updateCache(response) {
+  const res = await response.json()
+  const assetList = res.assetHashes
+  const reqs = []
 
-  // if its not on our site then just fetch from network
-  if(!url.hostname.includes(WEBSITE)) {
-    return fetch(url)
+  for (const asset in assetList) {
+    reqs.push("https://" + WEBSITE + asset)
   }
 
-  // if its in browser cache return immediately
-  let response
-  try {
-    // fetch only from browser cache, if not there check elsewhere
-    response = await fetch(new Request(url, {mode:"same-origin", cache: "only-if-cached"}))
-    console.log("NC: serving", url.pathname, "from http cache");
-    addToCache(url, response.clone())
-    return response
-  } catch (err) {
-    // it was not in the browser cache
-    console.error("NC:",err);
+  const cache = await caches.open(CACHE)
+  cache.addAll(reqs)
+}
 
-    // let's check the disk cache
-    const cachedContent = await caches.match(request)
-    if (cachedContent) {
-      console.log("NC: serving", url.pathname, "from disk cache");
-      return cachedContent
+// check hash of response against expected hash (name of file from masternode)
+async function assertHash(expectedHash, response) {
+  const clone = await response.clone()
+  const content = await clone.blob()
+  const fr = new FileReader()
+  fr.readAsArrayBuffer(content)
+  return new Promise(function(resolve, reject) {
+    fr.onloadend = async function() {
+      const result = await crypto.subtle.digest('SHA-256', fr.result)
+      let hash = bufferToHex(result)
+      if (hash.toUpperCase() === expectedHash.toUpperCase()) {
+        resolve(response)
+      } else {
+        reject(Error("CH: hash check failed.\nexpected: " + expectedHash + "\nactual: " + hash))
+      }
     }
-
-    // looks like we have to fallback to the network
-    let res
-    try {
-      res = await fetch(url)
-      console.log("NC: serving", url.pathname, "from network");
-      // cache in disk for later
-      addToCache(url, res.clone())
-      return res
-    } catch (err) {
-      // we are offline and we dont have this content
-      console.error("NC:", "offline and", url.pathname, "not in cache");
-      return useFallback()
-    }
-  }
+  })
 }
 
 // array buffer to hex

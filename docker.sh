@@ -4,7 +4,7 @@ printf "\
 const CACHE = '$SW_CACHE_TAG$(date +%s)';\n\
 const WEBSITE = '$SW_DOMAIN';\n\
 const MASTERNODE = 'https://$SW_DOMAIN';\n\
-const MNLIST = 'https://$SW_DOMAIN/docile-stu';\n\
+const MNLIST = 'https://$SW_DOMAIN/masternode-cache-list';\n\
 \n\
 " > /build/service-worker.js
 
