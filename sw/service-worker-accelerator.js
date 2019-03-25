@@ -82,15 +82,45 @@ async function addToCache(request, response) {
 
 // deal with cache adding and updating
 async function updateCache(response) {
-  const res = await response.json()
-  const assetList = res.assetHashes
+  let updateNeeded = false
   const reqs = []
 
-  for (const asset in assetList) {
-    reqs.push("https://" + WEBSITE + asset)
+  // the cached list
+  const list = await caches.match(MNLIST)
+  // if we dont have the list dont bother updating
+  if (!list) {
+    return
   }
 
+  const listJson = await list.json()
+  const cachedList = listJson.assetHashes
+
+  // the most current list
+  const res = await response.clone().json()
+  const assetList = res.assetHashes
+
+  // traverse the most current list
+  for (const asset in assetList) {
+    // see if the "old list" has the asset
+    if (cachedList[asset]) {
+      // if it does NOT then add to the update list
+      if (cachedList[asset] != assetList[asset]) {
+        reqs.push("https://" + WEBSITE + asset)
+        console.warn("UC:", asset, "out of date");
+      }
+    } else {
+      // if the cached list doesnt have it, then we need to update the cached list
+      updateNeeded = true
+    }
+  }
+
+  // update the list if its out of date
   const cache = await caches.open(CACHE)
+  if (updateNeeded) {
+    cache.put(new Request(MNLIST), response.clone())
+  }
+
+  // update the cache
   cache.addAll(reqs)
 }
 
