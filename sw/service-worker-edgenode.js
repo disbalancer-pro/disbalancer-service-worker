@@ -106,3 +106,4 @@ const FALLBACK =
   '  <path d="M91,70a9,9 0 0,1 18,0l-5,50a4,4 0 0,1-8,0z" fill="#aaa"/>' +
   '  <circle cy="138" r="9" cx="100" fill="#aaa"/>' +
   '</svg>';
+

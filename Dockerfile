@@ -1,14 +1,17 @@
-FROM alpine
+FROM node:8.15.1-alpine
 
 ENV SW_DOMAIN='example.com'
+ENV SW_CACHE_TAG='gladius-cache-v'
+ENV SW_USE_EDGE_NODES=false
+ENV SW_OBFUSCATE=false
 
-ENV SW_CACHE='gladius-cache-v'
+RUN npm install -g javascript-obfuscator; mkdir /build
 
 WORKDIR /data
 
-COPY sw/service-worker.js .
+COPY sw/service-worker-*.js ./
+COPY docker.sh .
 
-RUN mkdir /build
 VOLUME /build
 
-CMD echo "const CACHE = '$SW_CACHE$(date +%s)';const WEBSITE = '$SW_DOMAIN';const MASTERNODE = 'https://$SW_DOMAIN';const MNLIST = 'https://$SW_DOMAIN/masternode-cache-list';" > /build/service-worker.js;cat /data/service-worker.js >> /build/service-worker.js
+CMD ["sh", "docker.sh"]
