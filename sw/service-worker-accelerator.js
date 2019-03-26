@@ -8,18 +8,24 @@ self.addEventListener('install', function(event) {
 
 // active stage
 self.addEventListener('activate', function(event) {
+  // delete all of the old caches (previous versions)
   event.waitUntil(deleteOldCaches(CACHE));
   event.waitUntil(console.log("SW ready!"))
 })
 
 // every time a resource is requested
 self.addEventListener('fetch', function(event) {
+  if (isValidRequest(event.request)) {
     event.respondWith(networkCacheRace(event.request));
+  } else {
+    event.respondWith(fetch(event.request))
+  }
 });
 
-// A request is a resource request if it is a `GET`
-function isResource(request) {
-  return request.method === 'GET';
+// validates if the request is even worth the SW's time
+// for example we don't want the request if its a POST or from a different site
+function isValidRequest(request) {
+  return request.url.includes(WEBSITE) && request.method === 'GET';
 }
 
 // delete old caches
@@ -65,27 +71,43 @@ async function inCache(request) {
 // have the network race against the cache
 async function networkCacheRace(request) {
   try {
+    // we see which finishes first, the fetch or the disk cache.
+    // here we count on the fact that MOST servers will have some caching headers
+    // even if its just Etag or Last Modified. this approach takes advantage of
+    // the memory cache of browsers. if the the mem cache has a fresh asset, we
+    // can get it from there and not even have to run this logic. if it doesnt
+    // then we race the network and the cache.
     const response = await oneSuccess([fetch(request), inCache(request)])
+    // if we get here, the browser didn't have a fresh copy of the asset in memory
+    // lets try and add the asset to the cache asynchronously
     addToCache(request.url, response.clone())
+    // if its the masternode list request, kick off the updateCache function
     if (request.url == MNLIST){
       updateCache(response.clone())
     }
+    // serve the response from the winner of fetch vs disk cache
     return response
   } catch (err) {
+    // if we get here that means the fetch failed and theres nothing in cache
     console.error(err);
+    // lets just return the built in fallback svg
     return useFallback()
   }
 }
 
 // add a request/response pair to the cache
 async function addToCache(request, response) {
+  // if its already in cache then dont add it again
   const match = await caches.match(request)
   if (match) {
+    console.log("NCR: served", request, "from cache");
     return
+  } else {
+    console.log("NCR: served", request, "from network");
   }
 
+  // if it isn't, then add it
   const url = new URL(request)
-
   caches.open(CACHE).then(function(cache) {
     cache.put(request, response).then(() => {
       console.log("ATC:" ,url.pathname, "added to cache");
@@ -93,28 +115,28 @@ async function addToCache(request, response) {
   });
 }
 
-// deal with cache adding and updating
+// update all cache entries based on the asset list we get from the masternode
 async function updateCache(response) {
-  let updateNeeded = false
-  const reqs = []
+  let updateNeeded = false // keeps track if the masternode list needs to be updated
+  const reqs = [] // holds all of our assets/requests we need to update
 
   // the cached list
   const list = await caches.match(MNLIST)
-  // if we dont have the list dont bother updating
-  if (!list) {
+  if (!list) { // if we dont have the list dont bother updating anything
     return
   }
 
+  // getting our last asset list from cache
   const listJson = await list.json()
   const cachedList = listJson.assetHashes
 
-  // the most current list
+  // getting our latest asset list from network
   const res = await response.clone().json()
   const assetList = res.assetHashes
 
   // traverse the most current list
   for (const asset in assetList) {
-    // see if the "old list" has the asset
+    // see if the cached list has the asset
     if (cachedList[asset]) {
       // if it does NOT then add to the update list
       if (cachedList[asset] != assetList[asset]) {
@@ -145,6 +167,8 @@ async function assertHash(expectedHash, response) {
   fr.readAsArrayBuffer(content)
   return new Promise(function(resolve, reject) {
     fr.onloadend = async function() {
+      // hash and compare the contents of the file with the expected hash
+      // provided by the masternode
       const result = await crypto.subtle.digest('SHA-256', fr.result)
       let hash = bufferToHex(result)
       if (hash.toUpperCase() === expectedHash.toUpperCase()) {
