@@ -70,27 +70,6 @@ function bufferToHex(buffer) {
     return s;
 }
 
-// use the masternode list in cache to find the closest edgenode
-function getClosestNode() {
-  // use the list from the cache to find the closest edgenode
-  const cache = await caches.match(MNLIST)
-  if (cache) {
-    // we did find in the cache and now we can use it
-    const list = await cache.json()
-    // get the first thing in the list (the closest edgenode)
-    const edgenode = list.edgeNodes[0]
-
-    // we have the list, but the edgenode is not in the list
-    if (!edgenode) {
-      throw new Error("GCN: " + "list has no edgenodes!")
-    }
-    return hash
-  }
-
-  // we don't have the list
-  throw new Error("GCN: masternode list not in cache");
-}
-
 // delete old caches
 function deleteOldCaches(currentCache) {
   // get a list of caches
@@ -113,7 +92,7 @@ async function fetchFromEdgeNode(request) {
     const hash = await findHash(request.url)
 
     // use closest edgenode
-    const edgenode = await getClosestNode()
+    const edgenode = await findClosestNode()
 
     // call fetch for the edgenode
     const edgeURL = edgenode + "/content?website=" + WEBSITE + "&asset=" + hash
@@ -130,6 +109,27 @@ async function fetchFromEdgeNode(request) {
     // if anything here goes wrong we can't do much but throw an error
     throw new Error("FED: " + err)
   }
+}
+
+// use the masternode list in cache to find the closest edgenode
+async function findClosestNode() {
+  // use the list from the cache to find the closest edgenode
+  const cache = await caches.match(MNLIST)
+  if (cache) {
+    // we did find in the cache and now we can use it
+    const list = await cache.json()
+    // get the first thing in the list (the closest edgenode)
+    const edgenode = list.edgeNodes[0]
+
+    // we have the list, but the edgenode is not in the list
+    if (!edgenode) {
+      throw new Error("GCN: " + "list has no edgenodes!")
+    }
+    return hash
+  }
+
+  // we don't have the list
+  throw new Error("GCN: masternode list not in cache");
 }
 
 // find hash from the masternode list in the cache
