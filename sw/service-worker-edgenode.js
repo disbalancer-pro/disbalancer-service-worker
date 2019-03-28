@@ -70,6 +70,27 @@ function bufferToHex(buffer) {
     return s;
 }
 
+// use the masternode list in cache to find the closest edgenode
+function getClosestNode() {
+  // use the list from the cache to find the closest edgenode
+  const cache = await caches.match(MNLIST)
+  if (cache) {
+    // we did find in the cache and now we can use it
+    const list = await cache.json()
+    // get the first thing in the list (the closest edgenode)
+    const edgenode = list.edgeNodes[0]
+
+    // we have the list, but the edgenode is not in the list
+    if (!edgenode) {
+      throw new Error("GCN: " + "list has no edgenodes!")
+    }
+    return hash
+  }
+
+  // we don't have the list
+  throw new Error("GCN: masternode list not in cache");
+}
+
 // delete old caches
 function deleteOldCaches(currentCache) {
   // get a list of caches
@@ -111,7 +132,7 @@ async function fetchFromEdgeNode(request) {
   }
 }
 
-// find hash from the asset list
+// find hash from the masternode list in the cache
 async function findHash(requestURL) {
   const url = new URL(requestURL)
   // asset name is everything after / + any query params
@@ -132,7 +153,38 @@ async function findHash(requestURL) {
   }
 
   // we don't have the list
-  throw new Error("FH: asset list not in cache");
+  throw new Error("FH: masternode list not in cache");
+}
+
+// resolves when the first promise resolves, rejects if all reject
+async function firstSuccess(promises) {
+  try {
+    // go through all of the promises
+    const err = await Promise.all(promises.map(p => {
+      // on each promise we REJECT if the promise RESOLVES
+      // this takes advantage of Promise.all rejection behavior
+      // and lets us return the first resolved promise
+      return p.then(val => Promise.reject(val), err => Promise.resolve(err))
+    }))
+    // if Promise.all resolves it should return an array of errors
+    throw new Error("all promises failed")
+  } catch (val) {
+    // if Promise.all rejects then it should contain our result
+    return val
+  }
+}
+
+// wrapper that creates a promise that rejects if the asset is not in the cache
+async function inCache(request) {
+  return new Promise((resolve, reject) => {
+    caches.match(request).then((req) => req ? resolve(req) : reject(Error("not in cache")));
+  })
+}
+
+// validates if the request is even worth the SW's time
+// for example we don't want the request if its a POST or from a different site
+function isValidRequest(request) {
+  return request.url.includes(WEBSITE) && request.method === 'GET';
 }
 
 // serve the content from cache if it's there, if not fallback to the network
@@ -159,37 +211,6 @@ async function networkCacheRace(request) {
     console.error(err);
     // lets just return the built in fallback svg
     return useFallback()
-  }
-}
-
-// wrapper that creates a promise that rejects if the asset is not in the cache
-async function inCache(request) {
-  return new Promise((resolve, reject) => {
-    caches.match(request).then((req) => req ? resolve(req) : reject(Error("not in cache")));
-  })
-}
-
-// validates if the request is even worth the SW's time
-// for example we don't want the request if its a POST or from a different site
-function isValidRequest(request) {
-  return request.url.includes(WEBSITE) && request.method === 'GET';
-}
-
-// resolves when the first promise resolves, rejects if all reject
-async function firstSuccess(promises) {
-  try {
-    // go through all of the promises
-    const err = await Promise.all(promises.map(p => {
-      // on each promise we REJECT if the promise RESOLVES
-      // this takes advantage of Promise.all rejection behavior
-      // and lets us return the first resolved promise
-      return p.then(val => Promise.reject(val), err => Promise.resolve(err))
-    }))
-    // if Promise.all resolves it should return an array of errors
-    throw new Error("all promises failed")
-  } catch (val) {
-    // if Promise.all rejects then it should contain our result
-    return val
   }
 }
 
