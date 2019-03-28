@@ -1,5 +1,6 @@
 // service worker cache polyfill
 // importScripts('serviceworker-cache-polyfill.js')
+const mime = require("mime/lite")
 
 // install stage
 self.addEventListener('install', function(event) {
@@ -212,6 +213,36 @@ async function networkCacheRace(request) {
     // lets just return the built in fallback svg
     return useFallback()
   }
+}
+
+// the edgenode just sends a body, so we need to rebuild the response
+// with some headers so it can render correctly
+async function rebuildResponse(response, assetName) {
+  // this is just to give the root a .html extension
+  if (assetName == "/") {
+    assetName = "/index.html"
+  }
+
+  // use the mime pkg to match the mime type to the file extension
+  const contentType = mime.getType(assetName)
+
+  // extract the blob
+  const blob = await response.blob()
+
+  // if there is no matching content type there's nothing we can really do
+  if(contentType) {
+    return response.clone()
+  }
+
+  // build the new response
+  const init = {
+    "status" : res.status,
+    headers: {
+      "Content-Type": contentType,
+    }
+  }
+  
+  return new Response(blob, init)
 }
 
 // remove a request/response pair from the cache

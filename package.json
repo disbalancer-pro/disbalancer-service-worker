@@ -4,6 +4,7 @@
   "description": "## How To Run 1. Build the Gladius Blog 2. Paste the blog files into the `public` folder 3. Use nginx to serve the blog on `localhost:XXXX`",
   "main": "main.js",
   "dependencies": {
+    "mime": "^2.4.0",
     "nightmare": "^3.0.1",
     "nightmare-har-plugin": "^0.9.1"
   },
