@@ -5,6 +5,8 @@ ENV SW_CACHE_TAG='gladius-cache-v'
 ENV SW_USE_EDGE_NODES=false
 ENV SW_OBFUSCATE=false
 
+RUN npm install mime
+RUN npm install -g browserify
 RUN npm install -g javascript-obfuscator; mkdir /build
 
 WORKDIR /data

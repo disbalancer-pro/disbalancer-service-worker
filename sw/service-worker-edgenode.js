@@ -30,9 +30,12 @@ async function addToCache(request, response) {
   const match = await caches.match(request)
 
   // if a match say we served from cache, if not then its network
-  match ?
-  console.log("NCR: served", request, "from cache"), return :
-  console.log("NCR: served", request, "from network");
+  if (match) {
+    console.log("NCR: served", request, "from cache")
+    return
+  } else {
+    console.log("NCR: served", request, "from network")
+  }
 
   // if it isn't in the cache, then add it
   const url = new URL(request)
@@ -197,7 +200,7 @@ async function networkCacheRace(request) {
     // the memory cache of browsers. if the the mem cache has a fresh asset, we
     // can get it from there and not even have to run this logic. if it doesnt
     // then we race the masternode, edgenodes, and the cache.
-    const response = await firstSuccess([fetch(request), inCache(request)])
+    const response = await firstSuccess([fetch(request), fetchFromEdgeNode(request), inCache(request)])
     // if we get here, the browser didn't have a fresh copy of the asset in memory
     // lets try and add the asset to the cache asynchronously
     addToCache(request.url, response.clone())
@@ -218,7 +221,7 @@ async function networkCacheRace(request) {
 // the edgenode just sends a body, so we need to rebuild the response
 // with some headers so it can render correctly
 async function rebuildResponse(response, assetName) {
-  // this is just to give the root a .html extension
+  // this is just to give the root an .html extension
   if (assetName == "/") {
     assetName = "/index.html"
   }
@@ -241,7 +244,7 @@ async function rebuildResponse(response, assetName) {
       "Content-Type": contentType,
     }
   }
-  
+
   return new Response(blob, init)
 }
 
@@ -254,49 +257,48 @@ async function removeFromCache(request) {
   })
 }
 
-// update consists in opening the cache, seeing if there's new data, and then getting it
-async function updateCache(request, mnList) {
-  const url = new URL(request.url);
+// update all cache entries based on the asset list we get from the masternode
+async function updateCache(response) {
+  let updateNeeded = false // keeps track if the masternode list needs to be updated
+  const reqs = [] // holds all of our assets/requests we need to update
 
-  // never update the MNLIST since we get it at the beginning of every page load
-  if(url.href == MNLIST) {
+  // the cached list
+  const list = await caches.match(MNLIST)
+  if (!list) { // if we dont have the list dont bother updating anything
     return
   }
 
-  // 1. Make sure this resource is cached
-  const cachedContent = await caches.match(request)
-  if (!cachedContent) {
-    // if it's not cached for any reason then just return
-    return
+  // getting our last asset list from cache
+  const listJson = await list.json()
+  const cachedList = listJson.assetHashes
+
+  // getting our latest asset list from network
+  const res = await response.clone().json()
+  const assetList = res.assetHashes
+
+  // traverse the most current list
+  for (const asset in assetList) {
+    // see if the cached list has the asset
+    if (cachedList[asset]) {
+      // if it does NOT then add to the update list
+      if (cachedList[asset] != assetList[asset]) {
+        reqs.push("https://" + WEBSITE + asset)
+        console.warn("UC:", asset, "out of date");
+      }
+    } else {
+      // if the cached list doesnt have it, then we need to update the cached list
+      updateNeeded = true
+    }
   }
 
-  let hash
-  try{
-    // 2. See if the master asset list has is
-    hash = await findHashInCache(MNLIST, url.pathname + url.search)
-  } catch(err) {
-    // well if its not on the cache list then lets delete it
-    console.warn("UC:", url.pathname, "not in list, deleting from cache");
-    removeFromCache(url)
-    return
+  // update the list if its out of date
+  const cache = await caches.open(CACHE)
+  if (updateNeeded) {
+    cache.put(new Request(MNLIST), response.clone())
   }
 
-  let check
-  try {
-    // 3. Do a hash comparison
-    check = await assertHash(hash,cachedContent)
-  } catch (err) {
-    // if the hash is wrong but we trust the source, we must have wrong content
-    // so lets go and get the right content and put it right into the cache
-    console.warn("UC:", url.pathname,"updated");
-    caches.open(CACHE).then(function(cache) {
-      cache.add(request);
-    });
-    return
-  }
-  // if the cached content and mnlist have the same hash then it's up to date
-  console.log("UC:", url.pathname, "up to date");
-  return
+  // update the cache
+  cache.addAll(reqs)
 }
 
 // This fallback never fails since it uses embedded fallbacks.
