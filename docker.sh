@@ -17,7 +17,9 @@ else
   SW_FILE="service-worker-accelerator.js"
 fi
 
-browserify $SW_FILE -o /build/service-worker.js
+cat $SW_FILE >> /build/service-worker.js
+
+browserify /build/service-worker.js -o /build/service-worker.js
 
 if $SW_OBFUSCATE; then
   echo "Obfuscating the JS file"
